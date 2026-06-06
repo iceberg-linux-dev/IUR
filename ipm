@@ -1,0 +1,761 @@
+#!/usr/bin/env python3
+"""
+ipm — Iceberg Package Manager
+Commands:
+  submerge   ->  install package(s)
+  melt       ->  uninstall package(s)
+  dive       ->  update system
+  surface    ->  search for a package
+  depth      ->  show package info
+  iceberg    ->  list installed packages
+  freeze     ->  lock a package version (hold)
+  thaw       ->  unlock a package version (unhold)
+  installer  ->  launch the Iceberg Linux installer
+  link       ->  create 'installer' system shortcut
+  help       ->  show this message
+"""
+
+import subprocess
+import json
+import sys
+import time
+import os
+import re
+
+# --- COLORS -----------------------------------------------------------
+
+WHITE  = '\033[97m'
+CYAN   = '\033[96m'
+BLUE   = '\033[94m'
+GREEN  = '\033[92m'
+RED    = '\033[91m'
+YELLOW = '\033[93m'
+DIM    = '\033[2m'
+BOLD   = '\033[1m'
+RESET  = '\033[0m'
+
+# ======================================================================
+#  IPM -- PACKAGE MANAGER
+# ======================================================================
+
+def print_banner():
+    print(f"""
+{CYAN}{BOLD}  ██╗██████╗ ███╗   ███╗
+  ██║██╔══██╗████╗ ████║
+  ██║██████╔╝██╔████╔██║
+  ██║██╔═══╝ ██║╚██╔╝██║
+  ██║██║     ██║ ╚═╝ ██║
+  ╚═╝╚═╝     ╚═╝     ╚═╝{RESET}
+{DIM}  Iceberg Package Manager  v0.1{RESET}
+""")
+
+# --- HELPERS ----------------------------------------------------------
+
+def require_root():
+    if os.geteuid() != 0:
+        print(f"{RED}  ✗ ipm needs root for this command. Run with sudo.{RESET}")
+        sys.exit(1)
+
+def pacman(*args, capture=False):
+    """Thin wrapper around pacman."""
+    if capture:
+        cmd = ['pacman'] + list(args)
+    else:
+        cmd = ['pacman', '--color=always'] + list(args)
+
+    if capture:
+        return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd)
+
+def confirm(prompt):
+    """Simple y/n prompt. Returns True if user confirms."""
+    ans = input(f"{YELLOW}  ? {prompt} [y/N]: {RESET}").strip().lower()
+    return ans in ('y', 'yes')
+
+def print_section(title):
+    width = 48
+    print(f"\n{CYAN}{'─' * width}{RESET}")
+    print(f"{BOLD}{WHITE}  {title}{RESET}")
+    print(f"{CYAN}{'─' * width}{RESET}")
+
+# --- COMMANDS ---------------------------------------------------------
+
+def cmd_submerge(packages):
+    """Install one or more packages."""
+    if not packages:
+        print(f"{RED}  ✗ Usage: ipm submerge <package> [package...]{RESET}")
+        sys.exit(1)
+    require_root()
+    print_section(f"Submerging: {', '.join(packages)}")
+    print(f"{DIM}  Pushing packages beneath the surface...{RESET}\n")
+    result = pacman('-S', '--needed', *packages)
+    if result.returncode == 0:
+        print(f"\n{GREEN}  ✓ Submerged successfully.{RESET}")
+    else:
+        print(f"\n{RED}  ✗ Something surfaced wrong. Check the output above.{RESET}")
+        sys.exit(result.returncode)
+
+def cmd_melt(packages):
+    """Uninstall one or more packages."""
+    if not packages:
+        print(f"{RED}  ✗ Usage: ipm melt <package> [package...]{RESET}")
+        sys.exit(1)
+    require_root()
+    print_section(f"Melting: {', '.join(packages)}")
+    print(f"{YELLOW}  ⚠  This will remove: {', '.join(packages)}{RESET}")
+    if not confirm("Continue with melt?"):
+        print(f"{DIM}  Aborted. The ice holds.{RESET}")
+        sys.exit(0)
+    print(f"{DIM}  Melting away...{RESET}\n")
+    result = pacman('-Rns', *packages)
+    if result.returncode == 0:
+        print(f"\n{GREEN}  ✓ Melted clean.{RESET}")
+    else:
+        print(f"\n{RED}  ✗ Melt incomplete. Check the output above.{RESET}")
+        sys.exit(result.returncode)
+
+def cmd_dive():
+    """Full system update."""
+    require_root()
+    print_section("Diving Deeper — System Update")
+    print(f"{DIM}  Syncing mirrors and pulling the latest...{RESET}\n")
+    result = pacman('-Syu')
+    if result.returncode == 0:
+        print(f"\n{GREEN}  ✓ Surfaced with everything up to date.{RESET}")
+    else:
+        print(f"\n{RED}  ✗ Something went wrong mid-dive.{RESET}")
+        sys.exit(result.returncode)
+
+def cmd_surface(packages):
+    """Search for a package by name or description."""
+    if not packages:
+        print(f"{RED}  ✗ Usage: ipm surface <query>{RESET}")
+        sys.exit(1)
+
+    query = ' '.join(packages)
+    print_section(f"Surfacing results for: {query}")
+    print(f"{DIM}  Scanning the depths...{RESET}\n")
+
+    result = pacman('-Ss', *packages, capture=True)
+
+    if result.stdout.strip():
+        lines = result.stdout.strip().split('\n')
+        i = 0
+        while i < len(lines):
+            if not lines[i].strip() or lines[i].startswith('warning:'):
+                i += 1
+                continue
+
+            pkg_line  = lines[i]
+            desc_line = lines[i + 1] if i + 1 < len(lines) else ''
+            parts = pkg_line.split()
+
+            if parts and '/' in parts[0]:
+                pkg_id  = parts[0]
+                version = parts[1] if len(parts) > 1 else ''
+                flags   = ' '.join(parts[2:]) if len(parts) > 2 else ''
+                repo, _, name = pkg_id.partition('/')
+                installed_tag = f" {GREEN}[installed]{RESET}" if '[installed]' in flags else ''
+                print(f"  {CYAN}{repo}/{RESET}{BOLD}{name}{RESET} {DIM}{version}{RESET}{installed_tag}")
+                if desc_line and not desc_line.startswith('warning:'):
+                    print(f"    {DIM}{desc_line.strip()}{RESET}\n")
+                i += 2
+            else:
+                i += 1
+    else:
+        print(f"  {YELLOW}No packages found for '{query}'.{RESET}")
+
+def cmd_depth(package):
+    """Show detailed info about a package."""
+    if not package:
+        print(f"{RED}  ✗ Usage: ipm depth <package>{RESET}")
+        sys.exit(1)
+    print_section(f"Depth reading: {package}")
+    result = pacman('-Qi', package, capture=True)
+    if result.returncode != 0:
+        result = pacman('-Si', package, capture=True)
+    if result.returncode == 0:
+        for line in result.stdout.splitlines():
+            if ':' in line:
+                key, _, val = line.partition(':')
+                print(f"  {CYAN}{key.strip():<20}{RESET}: {val.strip()}")
+            elif line.strip():
+                print(f"  {'':<20}  {DIM}{line.strip()}{RESET}")
+    else:
+        print(f"  {RED}Package '{package}' not found.{RESET}")
+        sys.exit(1)
+
+def cmd_iceberg():
+    """List all explicitly installed packages."""
+    print_section("Your Iceberg — Installed Packages")
+    print(f"{DIM}  Everything frozen into this system:{RESET}\n")
+    result = pacman('-Qe', capture=True)
+    if result.returncode == 0:
+        lines = result.stdout.strip().split('\n')
+        for line in lines:
+            parts = line.split()
+            if parts:
+                name    = parts[0]
+                version = parts[1] if len(parts) > 1 else ''
+                print(f"  {CYAN}❄{RESET}  {BOLD}{name:<30}{RESET} {DIM}{version}{RESET}")
+        print(f"\n{DIM}  {len(lines)} package(s) on the iceberg.{RESET}")
+    else:
+        print(f"  {RED}Could not list packages.{RESET}")
+        sys.exit(1)
+
+def cmd_freeze(packages):
+    """Hold packages so they won't be updated."""
+    if not packages:
+        print(f"{RED}  ✗ Usage: ipm freeze <package> [package...]{RESET}")
+        sys.exit(1)
+    require_root()
+    print_section(f"Freezing: {', '.join(packages)}")
+    try:
+        with open('/etc/pacman.conf', 'r') as f:
+            lines = f.readlines()
+
+        found = False
+        for i, line in enumerate(lines):
+            if re.match(r'^\s*IgnorePkg\s*=', line):
+                existing_pkgs = line.split('=', 1)[1].strip().split()
+                new_pkgs = list(set(existing_pkgs + packages))
+                lines[i] = f'IgnorePkg = {" ".join(new_pkgs)}\n'
+                found = True
+                break
+
+        if not found:
+            lines.append(f'\nIgnorePkg = {" ".join(packages)}\n')
+
+        with open('/etc/pacman.conf', 'w') as f:
+            f.writelines(lines)
+
+        print(f"  {GREEN}✓ Frozen: {', '.join(packages)}{RESET}")
+        print(f"  {DIM}Added to IgnorePkg in /etc/pacman.conf{RESET}")
+    except Exception as e:
+        print(f"  {RED}✗ Could not update pacman.conf: {e}{RESET}")
+        sys.exit(1)
+
+def cmd_thaw(packages):
+    """Remove hold from packages."""
+    if not packages:
+        print(f"{RED}  ✗ Usage: ipm thaw <package> [package...]{RESET}")
+        sys.exit(1)
+    require_root()
+    print_section(f"Thawing: {', '.join(packages)}")
+    try:
+        with open('/etc/pacman.conf', 'r') as f:
+            lines = f.readlines()
+
+        found = False
+        for i, line in enumerate(lines):
+            if re.match(r'^\s*IgnorePkg\s*=', line):
+                existing_pkgs = set(line.split('=', 1)[1].strip().split())
+                updated_pkgs = existing_pkgs - set(packages)
+
+                if updated_pkgs:
+                    lines[i] = f'IgnorePkg = {" ".join(sorted(updated_pkgs))}\n'
+                else:
+                    lines[i] = '#IgnorePkg =\n'
+
+                removed = existing_pkgs & set(packages)
+                not_held = set(packages) - existing_pkgs
+                if removed:
+                    print(f"  {GREEN}✓ Thawed: {', '.join(sorted(removed))}{RESET}")
+                if not_held:
+                    print(f"  {YELLOW}  Not frozen: {', '.join(sorted(not_held))}{RESET}")
+                found = True
+                break
+
+        if not found:
+            print(f"  {YELLOW}  No packages are currently frozen.{RESET}")
+        else:
+            with open('/etc/pacman.conf', 'w') as f:
+                f.writelines(lines)
+
+    except Exception as e:
+        print(f"  {RED}✗ Could not update pacman.conf: {e}{RESET}")
+        sys.exit(1)
+
+def cmd_link():
+    """Creates a system shortcut so you can just type 'installer'."""
+    require_root()
+    print_section("Creating Installer Shortcut")
+    script_path = os.path.abspath(sys.argv[0])
+    try:
+        subprocess.run(['ln', '-sf', script_path, '/usr/local/bin/installer'], check=True)
+        print(f"  {GREEN}✓ Shortcut created successfully!{RESET}")
+        print(f"  {DIM}You can now just type '{BOLD}installer{RESET}{DIM}' in the terminal to launch it.{RESET}")
+    except subprocess.CalledProcessError:
+        print(f"  {RED}✗ Failed to create symlink. Are you running as root?{RESET}")
+
+def cmd_help():
+    print_banner()
+    cmds = [
+        ("submerge  <pkg...>", "Install package(s)"),
+        ("melt      <pkg...>", "Uninstall package(s) and orphaned deps"),
+        ("dive",               "Update the entire system"),
+        ("surface   <query>",  "Search available packages"),
+        ("depth     <pkg>",    "Show detailed package info"),
+        ("iceberg",            "List all installed packages"),
+        ("freeze    <pkg...>", "Lock package(s) — skip on updates"),
+        ("thaw      <pkg...>", "Unlock package(s)"),
+        ("installer",          "Launch the Iceberg Linux installer"),
+        ("link",               "Create 'installer' system shortcut"),
+        ("help",               "Show this message"),
+    ]
+    print(f"  {BOLD}Usage:{RESET}  ipm <command> [args]\n")
+    print(f"  {CYAN}{'Command':<26}{'What it does'}{RESET}")
+    print(f"  {'─'*48}")
+    for cmd, desc in cmds:
+        print(f"  {WHITE}{cmd:<26}{RESET}{DIM}{desc}{RESET}")
+    print()
+
+# ======================================================================
+#  ICEBERG LINUX INSTALLER
+# ======================================================================
+
+def installer_banner():
+    """Boot banner shown at installer start — includes wifi check."""
+    result   = subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True)
+    wifi     = result.returncode == 0
+    wifi_text = (f"{GREEN}wifi=on{RESET}" if wifi
+                 else f"{RED}wifi=off {WHITE}(troubleshoot){RESET}")
+    print(f"""
+{WHITE}              *
+             /|\\
+            / | \\
+           /  |  \\
+          / , ' , \\
+         /  ' | '  \\
+        / ,'  |  ', \\
+       /,'    |    ',\\
+      /'   .--+--.   '\\
+     /   ,'   |   ',   \\
+    /  ,'     |     ',  \\
+   /,-'        |       '-,\\  {RESET}
+{CYAN}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{RESET}
+{BOLD}{BLUE}       ICEBERG LINUX  v0.3
+       Arch-based  |  By onion    {RESET}
+{CYAN}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{RESET}
+  {wifi_text}
+""")
+    if not wifi:
+        fix = input("WiFi is off. Troubleshoot with iwctl? (yes/no): ").strip().lower()
+        if fix == 'yes':
+            subprocess.run(['iwctl'])
+
+def get_partition_names(drive):
+    if 'nvme' in drive or 'mmcblk' in drive:
+        return f'{drive}p1', f'{drive}p2', f'{drive}p3'
+    else:
+        return f'{drive}1', f'{drive}2', f'{drive}3'
+
+def is_efi():
+    result = subprocess.run(['ls', '/sys/firmware/efi'], capture_output=True)
+    return result.returncode == 0
+
+def detect_os(drive):
+    result = subprocess.run(['lsblk', '-J', '-o', 'NAME,FSTYPE,TYPE'], capture_output=True, text=True)
+    data   = json.loads(result.stdout)
+    drive_name = drive.replace('/dev/', '')
+    for disk in data['blockdevices']:
+        if disk['name'] == drive_name:
+            for part in disk.get('children', []):
+                if part.get('fstype') in ['ext4', 'btrfs', 'xfs', 'ntfs', 'f2fs']:
+                    return True
+    return False
+
+def get_ucode():
+    try:
+        result = subprocess.run(['grep', '-m1', 'vendor_id', '/proc/cpuinfo'],
+                                capture_output=True, text=True)
+        if 'Intel' in result.stdout:
+            return 'intel-ucode'
+        elif 'AMD' in result.stdout:
+            return 'amd-ucode'
+    except Exception:
+        pass
+    return None
+
+def bind_mounts():
+    print("Binding virtual filesystems...")
+    for fs in ['proc', 'sys', 'dev', 'dev/pts', 'run']:
+        subprocess.run(['mkdir', '-p', f'/mnt/{fs}'])
+        subprocess.run(['mount', '--bind', f'/{fs}', f'/mnt/{fs}'])
+    if is_efi():
+        subprocess.run(['mkdir', '-p', '/mnt/sys/firmware/efi/efivars'])
+        subprocess.run(['mount', '--bind', '/sys/firmware/efi/efivars',
+                        '/mnt/sys/firmware/efi/efivars'])
+
+def select_de():
+    print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+    print(CYAN + "║" + WHITE + "    Select a Desktop Environment:         " + CYAN + "║" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+    print(CYAN + "║" + RESET + " 1. KDE Plasma                            " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + " 2. GNOME                                 " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + " 3. XFCE4                                 " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + " 4. Manual (TTY - no DE)                  " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + " 5. Quit Installer                        " + CYAN + "║" + RESET)
+    print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+    choice = input("\nSelect an option: ").strip()
+    if choice == '1': return 'kde'
+    elif choice == '2': return 'gnome'
+    elif choice == '3': return 'xfce'
+    elif choice == '4': return 'manual'
+    elif choice == '5':
+        print("\nExiting installer. Goodbye!")
+        sys.exit(0)
+    else:
+        print("Invalid choice, please try again.")
+        return select_de()
+
+def select_install_size():
+    print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+    print(CYAN + "║" + WHITE + "    Select Installation Size:             " + CYAN + "║" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+    print(CYAN + "║" + RESET + " 1. Full  (all packages)                  " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + " 2. Minimal (firefox alacritty vim nano)  " + CYAN + "║" + RESET)
+    print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+    choice = input("\nSelect an option: ").strip()
+    if choice == '1': return 'full'
+    elif choice == '2': return 'minimal'
+    else:
+        print("Invalid choice, please try again.")
+        return select_install_size()
+
+def auto_partition(drive):
+    p1, p2, p3 = get_partition_names(drive)
+    print("\nCreating partitions...")
+    subprocess.run(['parted', '-s', drive, 'mklabel', 'gpt'])
+    subprocess.run(['parted', '-s', drive, 'mkpart', 'EFI', 'fat32', '1MiB', '1025MiB'])
+    subprocess.run(['parted', '-s', drive, 'set', '1', 'esp', 'on'])
+    subprocess.run(['parted', '-s', drive, 'mkpart', 'swap', 'linux-swap', '1025MiB', '5121MiB'])
+    subprocess.run(['parted', '-s', drive, 'mkpart', 'root', 'ext4', '5121MiB', '100%'])
+    subprocess.run(['partprobe', drive])
+    time.sleep(2)
+    print("Formatting partitions...")
+    subprocess.run(['mkfs.fat', '-F32', p1])
+    subprocess.run(['mkswap', p2])
+    subprocess.run(['mkfs.ext4', p3])
+
+def manual_partition(drive):
+    print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+    print(CYAN + "║" + WHITE + "    Manual Partitioning:                  " + CYAN + "║" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+    print(CYAN + "║" + RESET + " Create at least:                         " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + "  - An EFI partition (FAT32)              " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + "  - A swap partition                      " + CYAN + "║" + RESET)
+    print(CYAN + "║" + RESET + "  - A root partition (ext4)               " + CYAN + "║" + RESET)
+    print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+    input("\nPress Enter to open cfdisk...")
+    subprocess.run(['cfdisk', drive])
+    print("\nNow enter your partition paths:")
+    p1 = input("EFI partition (e.g. /dev/sda1): ").strip()
+    p2 = input("Swap partition (e.g. /dev/sda2): ").strip()
+    p3 = input("Root partition (e.g. /dev/sda3): ").strip()
+    print("Formatting partitions...")
+    subprocess.run(['mkfs.fat', '-F32', p1])
+    subprocess.run(['mkswap', p2])
+    subprocess.run(['mkfs.ext4', p3])
+    print("Mounting partitions...")
+    subprocess.run(['mount', p3, '/mnt'])
+    subprocess.run(['mkdir', '-p', '/mnt/boot/efi'])
+    subprocess.run(['mount', p1, '/mnt/boot/efi'])
+    subprocess.run(['swapon', p2])
+    print("Partitions mounted!")
+
+def partition_menu(drive):
+    os_found = detect_os(drive)
+    if os_found:
+        print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+        print(CYAN + "║" + RED + "  ⚠  Existing OS Detected on this Drive!  " + CYAN + "║" + RESET)
+        print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+        print(CYAN + "║" + RESET + " 1. Auto-wipe and partition               " + CYAN + "║" + RESET)
+        print(CYAN + "║" + RESET + " 2. Manual (cfdisk)                       " + CYAN + "║" + RESET)
+        print(CYAN + "║" + RESET + " 3. Quit                                  " + CYAN + "║" + RESET)
+        print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+    else:
+        print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+        print(CYAN + "║" + WHITE + "    Partition Your Drive:                 " + CYAN + "║" + RESET)
+        print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+        print(CYAN + "║" + RESET + " 1. Auto (1GB EFI, 4GB swap, rest root)  " + CYAN + "║" + RESET)
+        print(CYAN + "║" + RESET + " 2. Manual (cfdisk)                       " + CYAN + "║" + RESET)
+        print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+    choice = input("\nSelect an option: ").strip()
+    if choice == '1':
+        auto_partition(drive)
+        return True
+    elif choice == '2':
+        manual_partition(drive)
+        return False
+    elif choice == '3':
+        sys.exit(0)
+    else:
+        print("Invalid choice, please try again.")
+        return partition_menu(drive)
+
+def mount_partitions(drive):
+    p1, p2, p3 = get_partition_names(drive)
+    subprocess.run(['mount', p3, '/mnt'])
+    subprocess.run(['mkdir', '-p', '/mnt/boot/efi'])
+    subprocess.run(['mount', p1, '/mnt/boot/efi'])
+    subprocess.run(['swapon', p2])
+    print("Partitions mounted!")
+
+def install_base(de, size):
+    base_packages = [
+        'base', 'linux', 'linux-firmware', 'base-devel',
+        'networkmanager', 'grub', 'efibootmgr', 'sudo',
+        'pipewire', 'pipewire-pulse', 'wireplumber',
+        'noto-fonts', 'nano', 'vim', 'python',
+        'git', 'wget', 'curl'
+    ]
+    ucode = get_ucode()
+    if ucode:
+        base_packages.append(ucode)
+        print(f"Detected CPU, adding {ucode}...")
+
+    de_full = {
+        'kde':    ['plasma', 'kde-applications', 'sddm', 'xorg-server'],
+        'gnome':  ['gnome', 'gnome-extra', 'gdm', 'xorg-server'],
+        'xfce':   ['xfce4', 'xfce4-goodies', 'lightdm', 'lightdm-gtk-greeter', 'xorg-server'],
+        'manual': []
+    }
+    de_minimal = {
+        'kde':    ['plasma', 'sddm', 'xorg-server',
+                   'firefox', 'alacritty', 'htop', 'fastfetch'],
+        'gnome':  ['gnome-shell', 'gnome-terminal', 'nautilus', 'gdm', 'xorg-server',
+                   'firefox', 'alacritty', 'htop', 'fastfetch'],
+        'xfce':   ['xfce4', 'lightdm', 'lightdm-gtk-greeter', 'xorg-server',
+                   'firefox', 'alacritty', 'htop', 'fastfetch'],
+        'manual': ['htop', 'fastfetch']
+    }
+    packages = base_packages + (de_full if size == 'full' else de_minimal).get(de, [])
+    print(f"\nInstalling {size.upper()} {de.upper()} system...")
+    try:
+        subprocess.run(['pacstrap', '/mnt'] + packages, check=True)
+    except subprocess.CalledProcessError:
+        print(RED + "\nERROR: pacstrap failed! Check your internet and try again." + RESET)
+        sys.exit(1)
+    print("Generating fstab...")
+    result = subprocess.run(['genfstab', '-U', '/mnt'], capture_output=True, text=True)
+    with open('/mnt/etc/fstab', 'w') as f:
+        f.write(result.stdout)
+    print("Base system installed!")
+
+def install_ipm():
+    try:
+        # Make sure directory exists first
+        subprocess.run(['mkdir', '-p', '/mnt/usr/local/bin'], check=True)
+        subprocess.run(['cp', '/usr/local/bin/ipm', '/mnt/usr/local/bin/ipm'], check=True)
+        subprocess.run(['chmod', '+x', '/mnt/usr/local/bin/ipm'], check=True)
+        print("ipm installed!")
+    except Exception:
+        print("ipm not found, skipping...")
+
+def install_grub(selected):
+    print("Installing GRUB...")
+    try:
+        if is_efi():
+            subprocess.run([
+                'grub-install',
+                '--target=x86_64-efi',
+                '--efi-directory=/mnt/boot/efi',
+                '--boot-directory=/mnt/boot',
+                '--bootloader-id=Iceberg',
+                '--removable'
+            ], check=True)
+        else:
+            subprocess.run([
+                'grub-install',
+                '--target=i386-pc',
+                '--boot-directory=/mnt/boot',
+                selected
+            ], check=True)
+        subprocess.run(['arch-chroot', '/mnt', 'grub-mkconfig',
+                        '-o', '/boot/grub/grub.cfg'], check=True)
+        print("GRUB installed successfully!")
+    except subprocess.CalledProcessError:
+        print(RED + "\nERROR: GRUB install failed!" + RESET)
+        sys.exit(1)
+
+def configure_system(de, selected):
+    hostname = input("\nEnter hostname: ").strip()
+    with open('/mnt/etc/hostname', 'w') as f:
+        f.write(hostname + '\n')
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c',
+                    'echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen'])
+    with open('/mnt/etc/locale.conf', 'w') as f:
+        f.write('LANG=en_US.UTF-8\n')
+    timezone = input("Enter timezone (e.g. America/New_York): ").strip()
+    subprocess.run(['arch-chroot', '/mnt', 'ln', '-sf',
+                    f'/usr/share/zoneinfo/{timezone}', '/etc/localtime'])
+    subprocess.run(['arch-chroot', '/mnt', 'hwclock', '--systohc'])
+    subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'NetworkManager'])
+    if de == 'kde':
+        subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'sddm'])
+    elif de == 'gnome':
+        subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'gdm'])
+    elif de == 'xfce':
+        subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'lightdm'])
+    print("Generating initramfs...")
+    try:
+        subprocess.run(['arch-chroot', '/mnt', 'mkinitcpio', '-P'], check=True)
+    except subprocess.CalledProcessError:
+        print(RED + "\nERROR: mkinitcpio failed!" + RESET)
+        sys.exit(1)
+    bind_mounts()
+    install_grub(selected)
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c',
+                    'echo "%wheel ALL=(ALL:ALL) ALL" >> /etc/sudoers'])
+    root_pass = input("Set root password: ")
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c',
+                    f'echo "root:{root_pass}" | chpasswd'])
+    username = input("Enter username: ").strip()
+    subprocess.run(['arch-chroot', '/mnt', 'useradd', '-m', '-G', 'wheel', '-s', '/bin/bash', username])
+    user_pass = input(f"Set password for {username}: ")
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c',
+                    f'echo "{username}:{user_pass}" | chpasswd'])
+    print("\nSystem configured!")
+
+def run_installer():
+    """Entry point for the Iceberg Linux installer."""
+    installer_banner()
+    de_choice = select_de()
+    if de_choice != 'manual':
+        size_choice = select_install_size()
+    else:
+        size_choice = 'minimal'
+
+    output = subprocess.run(['lsblk', '-J', '-o', 'NAME,TYPE,SIZE'], capture_output=True, text=True)
+    data   = json.loads(output.stdout)
+    disks  = [d for d in data['blockdevices'] if d['type'] == 'disk']
+
+    print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
+    print(CYAN + "║" + WHITE + "    Available Drives:                     " + CYAN + "║" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+    for i, disk in enumerate(disks):
+        line = f" {i+1}. /dev/{disk['name']} - {disk['size']}"
+        print(CYAN + "║" + RESET + line.ljust(46) + CYAN + "║" + RESET)
+    print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
+
+    drive_choice = int(input("\nSelect a drive: ")) - 1
+    selected     = f"/dev/{disks[drive_choice]['name']}"
+
+    needs_mount = partition_menu(selected)
+    if needs_mount:
+        mount_partitions(selected)
+
+    install_base(de_choice, size_choice)
+    install_ipm()
+    configure_system(de_choice, selected)
+
+    print(CYAN + """
+╔══════════════════════════════════════════════╗
+║         Installation complete!               ║
+║      Would you like to reboot now?           ║
+╚══════════════════════════════════════════════╝
+""" + RESET)
+
+    reboot = input("Reboot now? (yes/no): ").strip().lower()
+    if reboot == 'yes':
+        subprocess.run(['umount', '-R', '/mnt'])
+        subprocess.run(['reboot'])
+    else:
+        print("\nYou can reboot manually when ready. Enjoy Iceberg Linux!")
+
+# ======================================================================
+#  INTERACTIVE SHELL  --  Keeps the app running and waiting for input
+# ======================================================================
+
+def interactive_shell():
+    print_banner()
+    print(f"  {BOLD}Welcome to the Iceberg Shell.{RESET}")
+    print(f"  {DIM}Type a command (e.g., '{CYAN}dive{DIM}' or '{CYAN}submerge firefox{DIM}') and press Enter.")
+    print(f"  Type '{CYAN}help{DIM}' for options or '{CYAN}exit{DIM}' to quit.\n")
+
+    while True:
+        try:
+            user_input = input(f"{CYAN}ipm>{RESET} ").strip()
+
+            if not user_input:
+                continue
+
+            parts = user_input.split()
+            command = parts[0].lower()
+            args = parts[1:]
+
+            if command in ('exit', 'quit'):
+                print(f"{DIM}  The ice holds. Goodbye!{RESET}")
+                sys.exit(0)
+
+            if command in COMMANDS:
+                COMMANDS[command](args)
+                print()
+            else:
+                print(f"  {RED}✗ Unknown command: '{command}'. Type 'help' for options.{RESET}\n")
+
+        except KeyboardInterrupt:
+            print(f"\n  {DIM}The ice holds. Goodbye!{RESET}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"  {RED}✗ An error occurred: {e}{RESET}\n")
+
+# ======================================================================
+#  DISPATCH  --  the only thing that executes at startup
+# ======================================================================
+
+COMMANDS = {
+    'submerge'  : lambda args: cmd_submerge(args),
+    'melt'      : lambda args: cmd_melt(args),
+    'dive'      : lambda args: cmd_dive(),
+    'surface'   : lambda args: cmd_surface(args),
+    'depth'     : lambda args: cmd_depth(args[0] if args else ''),
+    'iceberg'   : lambda args: cmd_iceberg(),
+    'freeze'    : lambda args: cmd_freeze(args),
+    'thaw'      : lambda args: cmd_thaw(args),
+    'installer' : lambda args: run_installer(),
+    'link'      : lambda args: cmd_link(),
+    'help'      : lambda args: cmd_help(),
+    '--help'    : lambda args: cmd_help(),
+    '-h'        : lambda args: cmd_help(),
+}
+
+def main():
+    # 1. AUTO-SUDO ELEVATION!
+    # If the user forgets 'sudo', we just re-launch this exact script with sudo automatically.
+    if os.geteuid() != 0:
+        print(f"{YELLOW}  ⚠ Root privileges required. Elevating...{RESET}")
+        try:
+            # os.execvp replaces the current python process with 'sudo python3 <script> <args>'
+            os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"{RED}  ✗ Failed to elevate privileges: {e}{RESET}")
+            print(f"  {DIM}Please run manually: sudo python3 {sys.argv[0]}{RESET}")
+            sys.exit(1)
+
+    # 2. SMART SHORTCUT (Installer symlink)
+    if os.path.basename(sys.argv[0]) == 'installer':
+        run_installer()
+        sys.exit(0)
+
+    # 3. COMMAND ROUTING
+    args = sys.argv[1:]
+    if not args:
+        # No arguments provided on startup -> Launch the interactive shell!
+        interactive_shell()
+        sys.exit(0)
+
+    # If arguments were provided directly (e.g. `ipm dive`), run them normally.
+    command = args[0].lower()
+    rest    = args[1:]
+
+    if command in COMMANDS:
+        COMMANDS[command](rest)
+    else:
+        print(f"\n  {RED}✗ Unknown command: '{command}'{RESET}")
+        print(f"  Run {CYAN}ipm help{RESET} to see available commands.\n")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
