@@ -5,9 +5,9 @@ this repo is made to update your iceberg system via the package manager IPM
 it also hosts the core of IPM for iceberg
 
 now what is an IPM?
-well IPM is an intigrated package manager that is meant to preform like pacman but fater there's less hyphens and less words so you can get it done fast
+well IPM is an integrated package manager that is meant to preform like pacman but faster there's less hyphens and less words so you can get it done fast
 Okay well why should i use iceberg if its just arch?
-well thats where you are wrong its not arch iceberg is based on arch like many other distros but where iscberg is different is it is fast and is meant to be availible for everyone ypour hardware shouldnt define your capabilities and thats where iceberg comes in
+well thats where you are wrong its not arch iceberg is based on arch like many other distros but where iceberg is different is it is fast and is meant to be availible for everyone your hardware shouldnt define your capabilities and thats where iceberg comes in
 
 you dont even have to activate the IPM its built in
 heres all of the IPM commands and what they do
