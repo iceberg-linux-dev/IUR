@@ -68,29 +68,26 @@ def connect_wifi_auto():
     subprocess.run(['rfkill', 'unblock', 'wifi'], capture_output=True)
     time.sleep(2)
     
-    print(f"{DIM}  Checking for saved WiFi connections...{RESET}")
-    known = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show'], capture_output=True, text=True)
-    if known.returncode == 0 and known.stdout.strip():
-        for line in known.stdout.strip().split('\n'):
-            if not line: continue
-            parts = line.split(':')
-            if len(parts) >= 2:
-                name, conn_type = parts[0], parts[1]
-                if conn_type in ['802-11-wireless', 'wifi'] and name.lower() != 'lo':
-                    print(f"{DIM}  Attempting to reconnect to {name}...{RESET}")
-                    if subprocess.run(['nmcli', 'connection', 'up', name], capture_output=True).returncode == 0:
-                        time.sleep(3)
-                        if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
-                            print(f"{GREEN}  ✓ Reconnected to {name}{RESET}")
-                            return True
+    # Nuke-proof: Check if we already have internet before trying anything else
+    if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
+        print(f"{GREEN}  ✓ Internet connection already active!{RESET}")
+        return True
+
+    print(f"\n{BOLD}  WiFi Setup{RESET}")
+    print(f"{DIM}  (Tip: You can also just press Enter to use the visual nmtui menu){RESET}")
+    ssid = input(f"  Enter WiFi SSID: ").strip()
     
-    print(f"\n{BOLD}  Manual WiFi Setup{RESET}")
-    print(f"{DIM}  Tip: Type SSID manually. Do NOT copy-paste.{RESET}")
-    ssid = input(f"  Enter SSID: ").strip()
+    # If they just press Enter, go straight to the foolproof visual menu
+    if not ssid:
+        print(f"{DIM}  Opening visual network manager...{RESET}")
+        subprocess.run(['nmtui'])
+        if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
+            print(f"{GREEN}  ✓ Connected successfully via nmtui!{RESET}")
+            return True
+        return False
+        
     password = input(f"  Enter Password: ").strip()
-    if not ssid: return False
-    
-    print(f"{DIM}  Scanning and connecting to {ssid}...{RESET}")
+    print(f"{DIM}  Connecting to {ssid}...{RESET}")
     result = subprocess.run(['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password], capture_output=True, text=True)
     time.sleep(3)
     
@@ -101,12 +98,12 @@ def connect_wifi_auto():
     err = result.stderr.strip() if result.stderr.strip() else "Connection failed (Check password or signal)"
     print(f"{RED}  ✗ Connection failed: {err}{RESET}")
     
-    retry = input("  Try interactive network menu (nmtui)? (yes/no): ").strip().lower()
-    if retry == 'yes':
-        subprocess.run(['nmtui'])
-        if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
-            print(f"{GREEN}  ✓ Connected successfully!{RESET}")
-            return True
+    print(f"{DIM}  Falling back to visual network menu...{RESET}")
+    subprocess.run(['nmtui'])
+    if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
+        print(f"{GREEN}  ✓ Connected successfully!{RESET}")
+        return True
+        
     return False
 
 def check_wifi():
