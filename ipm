@@ -55,7 +55,7 @@ def load_wifi_firmware(vendor):
             print(f"{GREEN}  ✓ Loaded module: {mod}{RESET}")
             time.sleep(1)
             return True
-    print(f"{YELLOW}  ⚠ Could not auto-load firmware. Ensure 'linux-firmware' is installed.{RESET}")
+    print(f"{YELLOW}   Could not auto-load firmware. Ensure 'linux-firmware' is installed.{RESET}")
     return False
 
 def connect_wifi_auto():
@@ -132,7 +132,10 @@ def print_section(title):
     print(f"\n{CYAN}{'─' * 48}{RESET}\n{BOLD}{WHITE}  {title}{RESET}\n{CYAN}{'─' * 48}{RESET}")
 
 def get_partition_names(drive):
-    return f'{drive}p1', f'{drive}p2', f'{drive}p3' if 'nvme' in drive or 'mmcblk' in drive else f'{drive}1', f'{drive}2', f'{drive}3'
+    if 'nvme' in drive or 'mmcblk' in drive:
+        return f'{drive}p1', f'{drive}p2', f'{drive}p3'
+    else:
+        return f'{drive}1', f'{drive}2', f'{drive}3'
 
 def is_efi():
     return subprocess.run(['ls', '/sys/firmware/efi'], capture_output=True).returncode == 0
@@ -290,7 +293,7 @@ def cmd_link():
         subprocess.run(['ln', '-sf', script_path, '/usr/local/bin/installer'], check=True)
         print(f"  {GREEN}✓ Shortcut created successfully!{RESET}")
     except subprocess.CalledProcessError:
-        print(f"  {RED}✗ Failed to create symlink.{RESET}")
+        print(f"  {RED} Failed to create symlink.{RESET}")
 
 def cmd_update():
     print(f"{DIM}  Checking for ipm updates from the IUR...{RESET}")
@@ -322,12 +325,11 @@ def cmd_help():
 def select_de():
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
     print(CYAN + "║" + WHITE + "    Select a Desktop Environment:         " + CYAN + "║" + RESET)
-    print(CYAN + "╠══════════════════════════════════════════════" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════╗" + RESET)
     for i, de in enumerate(["1. KDE Plasma", "2. GNOME", "3. XFCE4", "4. Manual (TTY)", "5. Quit"], 1):
         print(CYAN + "║" + RESET + f" {de}".ljust(46) + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
     
-    # BULLETPROOF LOOP: No recursion, no crashes.
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '5': print("\nExiting installer. Goodbye!"); sys.exit(0)
@@ -343,7 +345,6 @@ def select_install_size():
     print(CYAN + "║" + RESET + " 2. Minimal (firefox alacritty vim nano)  " + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
     
-    # BULLETPROOF LOOP: No recursion, no crashes.
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '1': return 'full'
@@ -387,7 +388,6 @@ def partition_menu(drive):
     print(CYAN + "║" + RESET + " 3. Quit                                  " + CYAN + "║" + RESET)
     print(CYAN + "══════════════════════════════════════════════╝" + RESET)
     
-    # BULLETPROOF LOOP: No recursion, no crashes.
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '3': sys.exit(0)
@@ -449,7 +449,7 @@ def install_ipm():
         
         subprocess.run(['mv', '/mnt/usr/bin/pacman', '/mnt/usr/bin/pacman.bin'], check=True)
         pacman_redirect = '''#!/bin/bash
-echo -e "\\n🧊 Iceberg Linux uses IPM, not pacman!\\n"
+echo -e "\\n Iceberg Linux uses IPM, not pacman!\\n"
 echo -e "Use these native commands instead:"
 echo -e "  \\033[96mdive\\033[0m        -> Update the entire system"
 echo -e "  \\033[96msubmerge\\033[0m    -> Install packages"
@@ -560,7 +560,7 @@ def run_installer():
     install_ipm()
     configure_system(de_choice, selected)
     
-    print(CYAN + "\n══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n══════════════════════════════════════════════╝" + RESET)
+    print(CYAN + "\n╔══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n╚══════════════════════════════════════════════╝" + RESET)
     if input("Reboot now? (yes/no): ").strip().lower() == 'yes':
         subprocess.run(['umount', '-R', '/mnt'])
         subprocess.run(['reboot'])
