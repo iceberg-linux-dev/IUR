@@ -449,7 +449,7 @@ def install_ipm():
         
         subprocess.run(['mv', '/mnt/usr/bin/pacman', '/mnt/usr/bin/pacman.bin'], check=True)
         pacman_redirect = '''#!/bin/bash
-echo -e "\\n Iceberg Linux uses IPM, not pacman!\\n"
+echo -e "\\n🧊 Iceberg Linux uses IPM, not pacman!\\n"
 echo -e "Use these native commands instead:"
 echo -e "  \\033[96mdive\\033[0m        -> Update the entire system"
 echo -e "  \\033[96msubmerge\\033[0m    -> Install packages"
@@ -532,8 +532,11 @@ def configure_system(de, selected):
     user_pw = input(f"Set password for {username}: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{user_pw}" | chpasswd'], check=True)
     
-    subprocess.run(['arch-chroot', '/mnt', 'mkdir', '-p', f'/home/{username}/.config/fastfetch'], check=True)
-    subprocess.run(['arch-chroot', '/mnt', 'cp', '/etc/xdg/fastfetch/config.jsonc', f'/home/{username}/.config/fastfetch/'], check=True)
+    # BULLETPROOF FASTFETCH CONFIG: Write directly to mounted drive, no chroot copy needed
+    ff_dir = f'/mnt/home/{username}/.config/fastfetch'
+    os.makedirs(ff_dir, exist_ok=True)
+    with open(f'{ff_dir}/config.jsonc', 'w') as f:
+        f.write('{\n  "logo": {\n    "type": "auto"\n  }\n}\n')
     subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'], check=True)
     
     print("\nSystem configured!")
