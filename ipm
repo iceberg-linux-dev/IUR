@@ -74,7 +74,7 @@ def connect_wifi_auto():
 
     print(f"\n{BOLD}  WiFi Setup{RESET}")
     print(f"{DIM}  (Tip: Press Enter to use the visual nmtui menu){RESET}")
-    ssid = input(f"  Enter WiFi SSID: ").strip
+    ssid = input(f"  Enter WiFi SSID: ").strip()
     
     if not ssid:
         print(f"{DIM}  Opening visual network manager...{RESET}")
@@ -383,7 +383,6 @@ def partition_menu(drive):
     return partition_menu(drive)
 
 def install_base(de, size):
-    # LIGHTDM ADDED AS STANDARD GREETER. UFW AND FASTFETCH INCLUDED.
     base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo', 'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget', 'curl', 'iwd', 'reflector', 'fastfetch', 'ufw', 'lightdm', 'lightdm-gtk-greeter']
     ucode = get_ucode()
     if ucode: base_packages.append(ucode)
@@ -399,7 +398,6 @@ def install_base(de, size):
     
     print(f"\nInstalling {size.upper()} {de.upper()} system...")
     
-    # NUKE-PROOF DNS OVERRIDE (IMMUTABLE)
     print(f"{DIM}  Forcing reliable DNS servers and locking them...{RESET}")
     try:
         subprocess.run(['rm', '-f', '/etc/resolv.conf'], capture_output=True)
@@ -436,7 +434,6 @@ def install_ipm():
         for cmd in commands:
             subprocess.run(['ln', '-sf', '/usr/local/bin/ipm', f'/mnt/usr/bin/{cmd}'], check=True)
         
-        # KILL PACMAN: Rename the real binary, replace with our script
         subprocess.run(['mv', '/mnt/usr/bin/pacman', '/mnt/usr/bin/pacman.bin'], check=True)
         pacman_redirect = '''#!/bin/bash
 echo -e "\\n🧊 Iceberg Linux uses IPM, not pacman!\\n"
@@ -471,31 +468,38 @@ def install_grub(selected):
 
 def configure_system(de, selected):
     hostname = input("\nEnter hostname: ").strip()
-    with open('/mnt/etc/hostname', 'w') as f: f.write(hostname + '\n') subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen'], check=True)
-    with open('/mnt/etc/locale.conf', 'w') as f: f.write('LANG=en_US.UTF-8\n')
-    subprocess.run(['arch-chroot', '/mnt', 'ln', '-sf', f"/usr/share/zoneinfo/{input('Enter timezone (e.g. America/New_York): ').strip()}", '/etc/localtime'], check=True)
+    
+    with open('/mnt/etc/hostname', 'w') as f:
+        f.write(hostname + '\n')
+    
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen'], check=True)
+    with open('/mnt/etc/locale.conf', 'w') as f:
+        f.write('LANG=en_US.UTF-8\n')
+        
+    tz = input('Enter timezone (e.g. America/New_York): ').strip()
+    subprocess.run(['arch-chroot', '/mnt', 'ln', '-sf', f"/usr/share/zoneinfo/{tz}", '/etc/localtime'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'hwclock', '--systohc'], check=True)
     
-    # AGGRESSIVE DE-ARCHING: Overwrite BOTH os-release locations so GNOME/LightDM read Iceberg
     os_release_content = 'NAME="Iceberg Linux"\nID=iceberg\nPRETTY_NAME="Iceberg Linux"\nLOGO=iceberg\n'
-    with open('/mnt/etc/os-release', 'w') as f: f.write(os_release_content)
-    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{os_release_content}" > /usr/lib/os-release'], check=True)
+    with open('/mnt/etc/os-release', 'w') as f:
+        f.write(os_release_content)
+    with open('/mnt/usr/lib/os-release', 'w') as f:
+        f.write(os_release_content)
 
-    # WIFI & FIREWALL SETUP
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'NetworkManager'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'iwd'], check=True)
-    nm_conf = "/mnt/etc/NetworkManager/NetworkManager.conf"
-    subprocess.run(['arch-chroot', '/mnt', 'touch', '/etc/NetworkManager/NetworkManager.conf'], capture_output=True)
-    with open(nm_conf, 'a') as f: f.write("\n[device]\nwifi.backend=iwd\n")
     
-    # ENABLE AND CONFIGURE UFW FIREWALL
+    nm_conf = "/mnt/etc/NetworkManager/NetworkManager.conf"
+    os.makedirs(os.path.dirname(nm_conf), exist_ok=True)
+    with open(nm_conf, 'a') as f:
+        f.write("\n[device]\nwifi.backend=iwd\n")
+    
     print(f"{DIM}  Configuring UFW Firewall (Deny incoming, Allow outgoing)...{RESET}")
     subprocess.run(['arch-chroot', '/mnt', 'ufw', '--force', 'reset'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'deny', 'incoming'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'allow', 'outgoing'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', '--now', 'ufw'], check=True)
     
-    # FORCE LIGHTDM AS STANDARD GREETER
     print(f"{DIM}  Setting LightDM as standard display manager...{RESET}")
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'disable', 'sddm', 'gdm'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'lightdm'], check=True)
@@ -505,12 +509,16 @@ def configure_system(de, selected):
     install_grub(selected)
     
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "%wheel ALL=(ALL:ALL) ALL" >> /etc/sudoers'], check=True)
-    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "root:{input("Set root password: ")}" | chpasswd'], check=True)
+    
+    root_pw = input("Set root password: ").strip()
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "root:{root_pw}" | chpasswd'], check=True)
+    
     username = input("Enter username: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'useradd', '-m', '-G', 'wheel', '-s', '/bin/bash', username], check=True)
-    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{input(f"Set password for {username}: ")}" | chpasswd'], check=True)
     
-    # Ensure Fastfetch config is copied to the new user's home directory
+    user_pw = input(f"Set password for {username}: ").strip()
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{user_pw}" | chpasswd'], check=True)
+    
     subprocess.run(['arch-chroot', '/mnt', 'mkdir', '-p', f'/home/{username}/.config/fastfetch'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'cp', '/etc/xdg/fastfetch/config.jsonc', f'/home/{username}/.config/fastfetch/'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'], check=True)
@@ -575,8 +583,11 @@ COMMANDS = {
 
 def main():
     if os.geteuid() != 0:
-        try: os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
-        except Exception as e: print(f"{RED}  ✗ Failed to elevate: {e}{RESET}"); sys.exit(1)
+        try: 
+            os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+        except Exception as e: 
+            print(f"{RED}  ✗ Failed to elevate: {e}{RESET}")
+            sys.exit(1)
 
     script_name = os.path.basename(sys.argv[0])
     if script_name in COMMANDS and script_name not in ['ipm', 'help', '--help', '-h']:
