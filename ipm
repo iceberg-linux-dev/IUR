@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ipm — Iceberg Package Manager & Installer
-Unified, nuke-proof entry point for Iceberg Linux
+Unified, nuke-proof entry point for Iceberg Linux 1.0
 """
 
 import subprocess
@@ -68,7 +68,6 @@ def connect_wifi_auto():
     subprocess.run(['rfkill', 'unblock', 'wifi'], capture_output=True)
     time.sleep(2)
     
-    # Nuke-proof: Only target actual WiFi connections, explicitly ignore 'lo' or ethernet
     print(f"{DIM}  Checking for saved WiFi connections...{RESET}")
     known = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show'], capture_output=True, text=True)
     if known.returncode == 0 and known.stdout.strip():
@@ -190,7 +189,7 @@ def print_banner():
     /  ,'     |     ',  \\
    /,-'        |       '-,\\  {RESET}
 {CYAN}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{RESET}
-{BOLD}{BLUE}       ICEBERG LINUX  v0.4
+{BOLD}{BLUE}       ICEBERG LINUX  v1.0
        Arch-based  |  By onion    {RESET}
 {CYAN}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{RESET}
   {wifi_text}
@@ -301,9 +300,7 @@ def cmd_link():
 
 def cmd_update():
     print(f"{DIM}  Checking for ipm updates from the IUR...{RESET}")
-    
     url = "https://raw.githubusercontent.com/iceberg-linux-dev/IUR/main/ipm"
-    
     result = subprocess.run(['curl', '-s', url], capture_output=True, text=True)
     
     if result.returncode == 0 and '#!/usr/bin/env python3' in result.stdout:
@@ -357,7 +354,7 @@ def auto_partition(drive):
     p1, p2, p3 = get_partition_names(drive)
     print("\nCreating & formatting partitions...")
     subprocess.run(['parted', '-s', drive, 'mklabel', 'gpt', 'mkpart', 'EFI', 'fat32', '1MiB', '1025MiB', 'set', '1', 'esp', 'on', 'mkpart', 'swap', 'linux-swap', '1025MiB', '5121MiB', 'mkpart', 'root', 'ext4', '5121MiB', '100%'], check=True)
-    subprocess.run(['partprobe', drive'], check=True)
+    subprocess.run(['partprobe', drive], check=True)
     time.sleep(2)
     subprocess.run(['mkfs.fat', '-F32', p1], check=True)
     subprocess.run(['mkswap', p2], check=True)
@@ -392,7 +389,8 @@ def partition_menu(drive):
     return partition_menu(drive)
 
 def install_base(de, size):
-    base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo', 'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget', 'curl', 'iwd', 'reflector']
+    # UFW AND FASTFETCH ADDED TO BASE PACKAGES FOR 1.0 SECURITY & BRANDING
+    base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo', 'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget', 'curl', 'iwd', 'reflector', 'fastfetch', 'ufw']
     ucode = get_ucode()
     if ucode: base_packages.append(ucode)
     
@@ -402,19 +400,17 @@ def install_base(de, size):
         if pkg not in base_packages: base_packages.append(pkg)
     
     de_pkgs = {'kde': ['plasma', 'kde-applications', 'sddm', 'xorg-server'], 'gnome': ['gnome', 'gnome-extra', 'gdm', 'xorg-server'], 'xfce': ['xfce4', 'xfce4-goodies', 'lightdm', 'lightdm-gtk-greeter', 'xorg-server'], 'manual': []}
-    min_pkgs = {'kde': ['plasma', 'sddm', 'xorg-server', 'firefox', 'alacritty', 'htop', 'fastfetch'], 'gnome': ['gnome-shell', 'gnome-terminal', 'nautilus', 'gdm', 'xorg-server', 'firefox', 'alacritty', 'htop', 'fastfetch'], 'xfce': ['xfce4', 'lightdm', 'lightdm-gtk-greeter', 'xorg-server', 'firefox', 'alacritty', 'htop', 'fastfetch'], 'manual': ['htop', 'fastfetch']}
+    min_pkgs = {'kde': ['plasma', 'sddm', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'gnome': ['gnome-shell', 'gnome-terminal', 'nautilus', 'gdm', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'xfce': ['xfce4', 'lightdm', 'lightdm-gtk-greeter', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'manual': ['htop']}
     packages = base_packages + (de_pkgs if size == 'full' else min_pkgs).get(de, [])
     
     print(f"\nInstalling {size.upper()} {de.upper()} system...")
     
-    # Nuke-proof DNS Override
     print(f"{DIM}  Forcing reliable DNS servers...{RESET}")
     try:
         if os.path.islink('/etc/resolv.conf'): os.remove('/etc/resolv.conf')
         with open('/etc/resolv.conf', 'w') as f: f.write("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
     except Exception as e: print(f"{YELLOW}  ⚠ DNS override warning: {e}{RESET}")
 
-    # Nuke-proof Mirror Refresh
     print(f"{DIM}  Refreshing package mirrors...{RESET}")
     if subprocess.run(['reflector', '--country', 'US', '--latest', '5', '--sort', 'rate', '--save', '/etc/pacman.d/mirrorlist'], capture_output=True).returncode != 0:
         res = subprocess.run(['curl', '-s', 'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on'], capture_output=True, text=True)
@@ -432,16 +428,34 @@ def install_base(de, size):
     print("Base system installed!")
 
 def install_ipm():
-    print(f"{DIM}  Installing ipm and creating native command shortcuts...{RESET}")
+    print(f"{DIM}  Installing ipm and baking native commands into the system...{RESET}")
     try:
         subprocess.run(['mkdir', '-p', '/mnt/usr/local/bin'], check=True)
         subprocess.run(['cp', '/usr/local/bin/ipm', '/mnt/usr/local/bin/ipm'], check=True)
         subprocess.run(['chmod', '+x', '/mnt/usr/local/bin/ipm'], check=True)
-        for cmd in ['submerge', 'melt', 'dive', 'surface', 'depth', 'iceberg', 'freeze', 'thaw', 'update', 'installer', 'link', 'help']:
-            subprocess.run(['ln', '-sf', '/usr/local/bin/ipm', f'/mnt/usr/local/bin/{cmd}'], check=True)
-        print(f"{GREEN}  ✓ ipm and native shortcuts installed successfully!{RESET}")
+        
+        commands = ['submerge', 'melt', 'dive', 'surface', 'depth', 'iceberg', 'freeze', 'thaw', 'update', 'installer', 'link', 'help']
+        for cmd in commands:
+            subprocess.run(['ln', '-sf', '/usr/local/bin/ipm', f'/mnt/usr/bin/{cmd}'], check=True)
+        
+        pacman_redirect = '''#!/bin/bash
+echo -e "\\n🧊 Iceberg Linux uses IPM, not pacman!\\n"
+echo -e "Use these native commands instead:"
+echo -e "  \\033[96mdive\\033[0m        -> Update the entire system"
+echo -e "  \\033[96msubmerge\\033[0m    -> Install packages"
+echo -e "  \\033[96mmelt\\033[0m        -> Remove packages"
+echo -e "  \\033[96msurface\\033[0m     -> Search for packages"
+echo -e "  \\033[96mupdate\\033[0m      -> Update the ipm tool itself\\n"
+exit 1
+'''
+        with open('/mnt/usr/bin/pacman', 'w') as f:
+            f.write(pacman_redirect)
+        subprocess.run(['chmod', '+x', '/mnt/usr/bin/pacman'], check=True)
+        
+        print(f"{GREEN}  ✓ ipm, native shortcuts, and pacman redirection installed successfully!{RESET}")
     except subprocess.CalledProcessError as e:
-        print(f"{RED}  ✗ CRITICAL: Failed to install ipm: {e}{RESET}"); sys.exit(1)
+        print(f"{RED}  ✗ CRITICAL: Failed to install ipm: {e}{RESET}")
+        sys.exit(1)
 
 def install_grub(selected):
     print("Installing GRUB...")
@@ -463,12 +477,19 @@ def configure_system(de, selected):
     subprocess.run(['arch-chroot', '/mnt', 'ln', '-sf', f"/usr/share/zoneinfo/{input('Enter timezone (e.g. America/New_York): ').strip()}", '/etc/localtime'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'hwclock', '--systohc'], check=True)
     
-    # NUKE-PROOF WIFI: Force NetworkManager to use iwd backend
+    # WIFI & FIREWALL SETUP
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'NetworkManager'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'iwd'], check=True)
     nm_conf = "/mnt/etc/NetworkManager/NetworkManager.conf"
     subprocess.run(['arch-chroot', '/mnt', 'touch', '/etc/NetworkManager/NetworkManager.conf'], capture_output=True)
     with open(nm_conf, 'a') as f: f.write("\n[device]\nwifi.backend=iwd\n")
+    
+    # ENABLE AND CONFIGURE UFW FIREWALL
+    print(f"{DIM}  Configuring UFW Firewall (Deny incoming, Allow outgoing)...{RESET}")
+    subprocess.run(['arch-chroot', '/mnt', 'ufw', '--force', 'reset'], capture_output=True)
+    subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'deny', 'incoming'], capture_output=True)
+    subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'allow', 'outgoing'], capture_output=True)
+    subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', '--now', 'ufw'], check=True)
     
     if de == 'kde': subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'sddm'], check=True)
     elif de == 'gnome': subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'gdm'], check=True)
@@ -483,6 +504,12 @@ def configure_system(de, selected):
     username = input("Enter username: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'useradd', '-m', '-G', 'wheel', '-s', '/bin/bash', username], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{input(f"Set password for {username}: ")}" | chpasswd'], check=True)
+    
+    # Ensure Fastfetch config is copied to the new user's home directory
+    subprocess.run(['arch-chroot', '/mnt', 'mkdir', '-p', f'/home/{username}/.config/fastfetch'], check=True)
+    subprocess.run(['arch-chroot', '/mnt', 'cp', '/etc/skel/.config/fastfetch/config.jsonc', f'/home/{username}/.config/fastfetch/'], check=True)
+    subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'], check=True)
+    
     print("\nSystem configured!")
 
 def run_installer():
@@ -547,7 +574,6 @@ def main():
         except Exception as e: print(f"{RED}  ✗ Failed to elevate: {e}{RESET}"); sys.exit(1)
 
     script_name = os.path.basename(sys.argv[0])
-    # Native command execution (e.g., typing 'dive' runs cmd_dive)
     if script_name in COMMANDS and script_name not in ['ipm', 'help', '--help', '-h']:
         COMMANDS[script_name](sys.argv[1:])
         sys.exit(0)
