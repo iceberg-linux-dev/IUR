@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ipm — Iceberg Package Manager & Installer
-Unified, nuke-proof entry point for Iceberg Linux 1.0
+Universal, nuke-proof entry point for Iceberg Linux 1.0
 """
 
 import subprocess
@@ -356,6 +356,10 @@ def auto_partition(drive):
     subprocess.run(['swapoff', '-a'], capture_output=True)
     for name in subprocess.run(['lsblk', '-rno', 'NAME', drive], capture_output=True, text=True).stdout.strip().split('\n'):
         if name: subprocess.run(['umount', '-f', f'/dev/{name}'], capture_output=True)
+    
+    # Wipe existing signatures to prevent parted errors
+    subprocess.run(['wipefs', '-a', drive], capture_output=True)
+    
     p1, p2, p3 = get_partition_names(drive)
     print("\nCreating & formatting partitions...")
     subprocess.run(['parted', '-s', drive, 'mklabel', 'gpt', 'mkpart', 'EFI', 'fat32', '1MiB', '1025MiB', 'set', '1', 'esp', 'on', 'mkpart', 'swap', 'linux-swap', '1025MiB', '5121MiB', 'mkpart', 'root', 'ext4', '5121MiB', '100%'], check=True)
@@ -418,7 +422,7 @@ def install_base(de, size):
             f.write("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
         subprocess.run(['chattr', '+i', '/etc/resolv.conf'], capture_output=True)
     except Exception as e:
-        print(f"{YELLOW}  ⚠ DNS override warning: {e}{RESET}")
+        print(f"{YELLOW}  ⚠ DNS override warning: {e} (Proceeding anyway){RESET}")
 
     print(f"{DIM}  Refreshing package mirrors...{RESET}")
     if subprocess.run(['reflector', '--country', 'US', '--latest', '5', '--sort', 'rate', '--save', '/etc/pacman.d/mirrorlist'], capture_output=True).returncode != 0:
@@ -426,6 +430,12 @@ def install_base(de, size):
         if res.returncode == 0:
             with open('/etc/pacman.d/mirrorlist', 'w') as f:
                 f.write('\n'.join([l for l in res.stdout.replace('#Server', 'Server').split('\n') if l.startswith('Server')][:5]))
+    
+    # PRE-FLIGHT CHECK: Guarantee DNS works right before pacstrap
+    print(f"{DIM}  Verifying DNS resolution before pacstrap...{RESET}")
+    if subprocess.run(['ping', '-c', '1', '-W', '2', 'archlinux.org'], capture_output=True).returncode != 0:
+        print(f"{RED}  ✗ CRITICAL: Cannot resolve archlinux.org. Check internet connection.{RESET}")
+        sys.exit(1)
     
     try:
         subprocess.run(['pacstrap', '-K', '/mnt'] + packages, check=True)
@@ -499,6 +509,10 @@ def configure_system(de, selected):
     with open('/mnt/usr/lib/os-release', 'w') as f:
         f.write(os_release_content)
 
+    # SILVER BULLET: Force GRUB to display "Iceberg Linux" in the boot menu
+    with open('/mnt/etc/default/grub', 'a') as f:
+        f.write('\nGRUB_DISTRIBUTOR="Iceberg Linux"\n')
+
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'NetworkManager'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'iwd'], check=True)
     
@@ -532,11 +546,44 @@ def configure_system(de, selected):
     user_pw = input(f"Set password for {username}: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{user_pw}" | chpasswd'], check=True)
     
-    # BULLETPROOF FASTFETCH CONFIG: Write directly to mounted drive, no chroot copy needed
+    # BULLETPROOF FASTFETCH CONFIG: Use Python's json library to guarantee 100% valid JSON, no escape errors
     ff_dir = f'/mnt/home/{username}/.config/fastfetch'
     os.makedirs(ff_dir, exist_ok=True)
-    with open(f'{ff_dir}/config.jsonc', 'w') as f:
-        f.write('{\n  "logo": {\n    "type": "auto"\n  }\n}\n')
+    ff_config_path = os.path.join(ff_dir, 'config.jsonc')
+    
+    ff_config = {
+        "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+        "logo": {
+            "type": "custom",
+            "source": [
+                "              *",
+                "             /|\\",
+                "            / | \\",
+                "           /  |  \\",
+                "          / , ' , \\",
+                "         /  ' | '  \\",
+                "        / ,'  |  ', \\",
+                "       /,'    |    ',\\",
+                "      /'   .--+--.   '\\",
+                "     /   ,'   |   ',   \\",
+                "    /  ,'     |     ',  \\",
+                "   /,-'        |       '-,\\"
+            ]
+        },
+        "modules": [
+            "title", "separator", "os", "host", "kernel", "uptime", "packages",
+            "shell", "display", "de", "wm", "theme", "icons", "font", "cursor",
+            "terminal", "terminalfont", "cpu", "gpu", "memory", "swap", "disk",
+            "battery", "locale", "break"
+        ],
+        "display": {
+            "separator": "  ->  "
+        }
+    }
+    
+    with open(ff_config_path, 'w') as f:
+        json.dump(ff_config, f, indent=2)
+        
     subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'], check=True)
     
     print("\nSystem configured!")
