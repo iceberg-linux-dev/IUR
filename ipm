@@ -266,7 +266,7 @@ def cmd_freeze(packages):
         with open('/etc/pacman.conf', 'w') as f: f.writelines(lines)
         print(f"  {GREEN}✓ Frozen: {', '.join(packages)}{RESET}")
     except Exception as e:
-        print(f"  {RED}✗ Could not update pacman.conf: {e}{RESET}"); sys.exit(1)
+        print(f"  {RED} Could not update pacman.conf: {e}{RESET}"); sys.exit(1)
 
 def cmd_thaw(packages):
     if not packages: print(f"{RED}  ✗ Usage: thaw <package> [package...]{RESET}"); sys.exit(1)
@@ -322,13 +322,18 @@ def cmd_help():
 def select_de():
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
     print(CYAN + "║" + WHITE + "    Select a Desktop Environment:         " + CYAN + "║" + RESET)
-    print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
+    print(CYAN + "╠══════════════════════════════════════════════" + RESET)
     for i, de in enumerate(["1. KDE Plasma", "2. GNOME", "3. XFCE4", "4. Manual (TTY)", "5. Quit"], 1):
         print(CYAN + "║" + RESET + f" {de}".ljust(46) + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
-    choice = input("\nSelect an option: ").strip()
-    if choice == '5': print("\nExiting installer. Goodbye!"); sys.exit(0)
-    return {'1':'kde', '2':'gnome', '3':'xfce', '4':'manual'}.get(choice, select_de())
+    
+    # BULLETPROOF LOOP: No recursion, no crashes.
+    while True:
+        choice = input("\nSelect an option: ").strip()
+        if choice == '5': print("\nExiting installer. Goodbye!"); sys.exit(0)
+        if choice in ['1', '2', '3', '4']:
+            return {'1':'kde', '2':'gnome', '3':'xfce', '4':'manual'}[choice]
+        print(f"{RED}  Invalid choice. Please enter 1, 2, 3, 4, or 5.{RESET}")
 
 def select_install_size():
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
@@ -337,8 +342,13 @@ def select_install_size():
     print(CYAN + "║" + RESET + " 1. Full  (all packages)                  " + CYAN + "║" + RESET)
     print(CYAN + "║" + RESET + " 2. Minimal (firefox alacritty vim nano)  " + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
-    choice = input("\nSelect an option: ").strip()
-    return 'full' if choice == '1' else 'minimal' if choice == '2' else select_install_size()
+    
+    # BULLETPROOF LOOP: No recursion, no crashes.
+    while True:
+        choice = input("\nSelect an option: ").strip()
+        if choice == '1': return 'full'
+        if choice == '2': return 'minimal'
+        print(f"{RED}  Invalid choice. Please enter 1 or 2.{RESET}")
 
 def auto_partition(drive):
     subprocess.run(['umount', '-R', '/mnt'], capture_output=True)
@@ -376,11 +386,14 @@ def partition_menu(drive):
     print(CYAN + "║" + RESET + " 2. Manual (cfdisk)                       " + CYAN + "║" + RESET)
     print(CYAN + "║" + RESET + " 3. Quit                                  " + CYAN + "║" + RESET)
     print(CYAN + "══════════════════════════════════════════════╝" + RESET)
-    choice = input("\nSelect an option: ").strip()
-    if choice == '3': sys.exit(0)
-    if choice == '1': auto_partition(drive); return True
-    if choice == '2': manual_partition(drive); return False
-    return partition_menu(drive)
+    
+    # BULLETPROOF LOOP: No recursion, no crashes.
+    while True:
+        choice = input("\nSelect an option: ").strip()
+        if choice == '3': sys.exit(0)
+        if choice == '1': auto_partition(drive); return True
+        if choice == '2': manual_partition(drive); return False
+        print(f"{RED}  Invalid choice. Please enter 1, 2, or 3.{RESET}")
 
 def install_base(de, size):
     base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo', 'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget', 'curl', 'iwd', 'reflector', 'fastfetch', 'ufw', 'lightdm', 'lightdm-gtk-greeter']
@@ -547,7 +560,7 @@ def run_installer():
     install_ipm()
     configure_system(de_choice, selected)
     
-    print(CYAN + "\n══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n╚══════════════════════════════════════════════╝" + RESET)
+    print(CYAN + "\n══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n══════════════════════════════════════════════╝" + RESET)
     if input("Reboot now? (yes/no): ").strip().lower() == 'yes':
         subprocess.run(['umount', '-R', '/mnt'])
         subprocess.run(['reboot'])
