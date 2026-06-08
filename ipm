@@ -357,11 +357,12 @@ def auto_partition(drive):
     for name in subprocess.run(['lsblk', '-rno', 'NAME', drive], capture_output=True, text=True).stdout.strip().split('\n'):
         if name: subprocess.run(['umount', '-f', f'/dev/{name}'], capture_output=True)
     
+    # Wipe existing signatures to prevent parted errors
     subprocess.run(['wipefs', '-a', drive], capture_output=True)
     
     p1, p2, p3 = get_partition_names(drive)
     print("\nCreating & formatting partitions...")
-    # FIXED: 'primary' satisfies parted's strict GPT enum requirements
+    # FIXED: Changed 'EFI', 'swap', 'root' to 'primary' to satisfy parted's strict GPT enum requirements
     subprocess.run(['parted', '-s', drive, 'mklabel', 'gpt', 'mkpart', 'primary', 'fat32', '1MiB', '1025MiB', 'set', '1', 'esp', 'on', 'mkpart', 'primary', 'linux-swap', '1025MiB', '5121MiB', 'mkpart', 'primary', 'ext4', '5121MiB', '100%'], check=True)
     subprocess.run(['partprobe', drive], check=True)
     time.sleep(2)
@@ -431,6 +432,7 @@ def install_base(de, size):
             with open('/etc/pacman.d/mirrorlist', 'w') as f:
                 f.write('\n'.join([l for l in res.stdout.replace('#Server', 'Server').split('\n') if l.startswith('Server')][:5]))
     
+    # PRE-FLIGHT CHECK: Guarantee DNS works right before pacstrap
     print(f"{DIM}  Verifying DNS resolution before pacstrap...{RESET}")
     if subprocess.run(['ping', '-c', '1', '-W', '2', 'archlinux.org'], capture_output=True).returncode != 0:
         print(f"{RED}  ✗ CRITICAL: Cannot resolve archlinux.org. Check internet connection.{RESET}")
@@ -545,7 +547,7 @@ def configure_system(de, selected):
     user_pw = input(f"Set password for {username}: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{user_pw}" | chpasswd'], check=True)
     
-    # BULLETPROOF FASTFETCH CONFIG: json.dump guarantees 100% valid JSON
+    # BULLETPROOF FASTFETCH CONFIG: Use Python's json library to guarantee 100% valid JSON, no escape errors
     ff_dir = f'/mnt/home/{username}/.config/fastfetch'
     os.makedirs(ff_dir, exist_ok=True)
     ff_config_path = os.path.join(ff_dir, 'config.jsonc')
