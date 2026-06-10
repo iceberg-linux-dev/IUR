@@ -12,15 +12,16 @@ import os
 import re
 
 # --- COLORS -----------------------------------------------------------
-WHITE  = '\033[97m'
-CYAN   = '\033[96m'
-BLUE   = '\033[94m'
-GREEN  = '\033[92m'
-RED    = '\033[91m'
+WHITE = '\033[97m'
+CYAN = '\033[96m'
+BLUE = '\033[94m'
+GREEN = '\033[92m'
+RED = '\033[91m'
 YELLOW = '\033[93m'
-DIM    = '\033[2m'
-BOLD   = '\033[1m'
-RESET  = '\033[0m'
+DIM = '\033[2m'
+BOLD = '\033[1m'
+RESET = '\033[0m'
+
 
 # ======================================================================
 #  HARDWARE & WIFI HELPERS
@@ -30,15 +31,22 @@ def detect_wifi_chip():
     try:
         result = subprocess.run(['lspci', '-nnk'], capture_output=True, text=True)
         output = result.stdout.lower()
-        if 'marvell' in output or '88w' in output: return 'marvell', 'mwifiex_pcie'
-        elif 'realtek' in output or 'rtl88' in output or 'rtl87' in output: return 'realtek', 'rtw88'
-        elif 'broadcom' in output or 'bcm43' in output: return 'broadcom', 'brcmfmac'
-        elif 'mediatek' in output or 'mt76' in output or 'mt79' in output: return 'mediatek', 'mt76'
-        elif 'intel' in output and ('wireless' in output or 'wi-fi' in output): return 'intel', 'iwlwifi'
-        elif 'qualcomm' in output or 'atheros' in output: return 'qualcomm', 'ath10k'
+        if 'marvell' in output or '88w' in output:
+            return 'marvell', 'mwifiex_pcie'
+        elif 'realtek' in output or 'rtl88' in output or 'rtl87' in output:
+            return 'realtek', 'rtw88'
+        elif 'broadcom' in output or 'bcm43' in output:
+            return 'broadcom', 'brcmfmac'
+        elif 'mediatek' in output or 'mt76' in output or 'mt79' in output:
+            return 'mediatek', 'mt76'
+        elif 'intel' in output and ('wireless' in output or 'wi-fi' in output):
+            return 'intel', 'iwlwifi'
+        elif 'qualcomm' in output or 'atheros' in output:
+            return 'qualcomm', 'ath10k'
         return 'unknown', 'generic'
     except Exception:
         return 'unknown', 'generic'
+
 
 def load_wifi_firmware(vendor):
     print(f"{DIM}  Detected WiFi vendor: {BOLD}{vendor.upper()}{RESET}")
@@ -58,16 +66,17 @@ def load_wifi_firmware(vendor):
     print(f"{YELLOW}   Could not auto-load firmware. Ensure 'linux-firmware' is installed.{RESET}")
     return False
 
+
 def connect_wifi_auto():
     vendor, _ = detect_wifi_chip()
     load_wifi_firmware(vendor)
-    
+
     subprocess.run(['systemctl', 'start', 'NetworkManager'], capture_output=True)
     time.sleep(1)
     subprocess.run(['nmcli', 'radio', 'wifi', 'on'], capture_output=True)
     subprocess.run(['rfkill', 'unblock', 'wifi'], capture_output=True)
     time.sleep(2)
-    
+
     if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
         print(f"{GREEN}  ✓ Internet connection already active!{RESET}")
         return True
@@ -75,7 +84,7 @@ def connect_wifi_auto():
     print(f"\n{BOLD}  WiFi Setup{RESET}")
     print(f"{DIM}  (Tip: Press Enter to use the visual nmtui menu){RESET}")
     ssid = input(f"  Enter WiFi SSID: ").strip()
-    
+
     if not ssid:
         print(f"{DIM}  Opening visual network manager...{RESET}")
         subprocess.run(['nmtui'])
@@ -83,25 +92,27 @@ def connect_wifi_auto():
             print(f"{GREEN}  ✓ Connected successfully via nmtui!{RESET}")
             return True
         return False
-        
+
     password = input(f"  Enter Password: ").strip()
     print(f"{DIM}  Connecting to {ssid}...{RESET}")
-    result = subprocess.run(['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password], capture_output=True, text=True)
+    result = subprocess.run(['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password], capture_output=True,
+                            text=True)
     time.sleep(3)
-    
+
     if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
         print(f"{GREEN}  ✓ Connected successfully!{RESET}")
         return True
-    
+
     err = result.stderr.strip() if result.stderr.strip() else "Connection failed (Check password or signal)"
     print(f"{RED}  ✗ Connection failed: {err}{RESET}")
-    
+
     print(f"{DIM}  Falling back to visual network menu...{RESET}")
     subprocess.run(['nmtui'])
     if subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], capture_output=True).returncode == 0:
         print(f"{GREEN}  ✓ Connected successfully!{RESET}")
         return True
     return False
+
 
 def check_wifi():
     print(f"{DIM}  Testing internet connection...{RESET}")
@@ -112,6 +123,7 @@ def check_wifi():
         return connect_wifi_auto()
     return False
 
+
 # ======================================================================
 #  CORE HELPERS
 # ======================================================================
@@ -121,15 +133,19 @@ def require_root():
         print(f"{RED}  ✗ ipm needs root for this command. Run with sudo.{RESET}")
         sys.exit(1)
 
+
 def pacman(*args, capture=False):
     cmd = ['pacman', '--color=always'] + list(args) if not capture else ['pacman'] + list(args)
     return subprocess.run(cmd, capture_output=True, text=True) if capture else subprocess.run(cmd)
 
+
 def confirm(prompt):
     return input(f"{YELLOW}  ? {prompt} [y/N]: {RESET}").strip().lower() in ('y', 'yes')
 
+
 def print_section(title):
     print(f"\n{CYAN}{'─' * 48}{RESET}\n{BOLD}{WHITE}  {title}{RESET}\n{CYAN}{'─' * 48}{RESET}")
+
 
 def get_partition_names(drive):
     if 'nvme' in drive or 'mmcblk' in drive:
@@ -137,8 +153,10 @@ def get_partition_names(drive):
     else:
         return f'{drive}1', f'{drive}2', f'{drive}3'
 
+
 def is_efi():
     return subprocess.run(['ls', '/sys/firmware/efi'], capture_output=True).returncode == 0
+
 
 def detect_os(drive):
     result = subprocess.run(['lsblk', '-J', '-o', 'NAME,FSTYPE,TYPE'], capture_output=True, text=True)
@@ -149,13 +167,18 @@ def detect_os(drive):
                     return True
     return False
 
+
 def get_ucode():
     try:
         result = subprocess.run(['grep', '-m1', 'vendor_id', '/proc/cpuinfo'], capture_output=True, text=True)
-        if 'Intel' in result.stdout: return 'intel-ucode'
-        elif 'AMD' in result.stdout: return 'amd-ucode'
-    except Exception: pass
+        if 'Intel' in result.stdout:
+            return 'intel-ucode'
+        elif 'AMD' in result.stdout:
+            return 'amd-ucode'
+    except Exception:
+        pass
     return None
+
 
 def bind_mounts():
     for fs in ['proc', 'sys', 'dev', 'dev/pts', 'run']:
@@ -164,6 +187,7 @@ def bind_mounts():
     if is_efi():
         subprocess.run(['mkdir', '-p', '/mnt/sys/firmware/efi/efivars'])
         subprocess.run(['mount', '--bind', '/sys/firmware/efi/efivars', '/mnt/sys/firmware/efi/efivars'])
+
 
 # ======================================================================
 #  IPM PACKAGE MANAGER COMMANDS
@@ -192,6 +216,7 @@ def print_banner():
   {wifi_text}
 """)
 
+
 def cmd_submerge(packages):
     if not packages: print(f"{RED}  ✗ Usage: submerge <package> [package...]{RESET}"); sys.exit(1)
     require_root()
@@ -199,7 +224,9 @@ def cmd_submerge(packages):
     if pacman('-S', '--needed', *packages).returncode == 0:
         print(f"\n{GREEN}  ✓ Submerged successfully.{RESET}")
     else:
-        print(f"\n{RED}  ✗ Something surfaced wrong.{RESET}"); sys.exit(1)
+        print(f"\n{RED}  ✗ Something surfaced wrong.{RESET}");
+        sys.exit(1)
+
 
 def cmd_melt(packages):
     if not packages: print(f"{RED}  ✗ Usage: melt <package> [package...]{RESET}"); sys.exit(1)
@@ -209,7 +236,9 @@ def cmd_melt(packages):
     if pacman('-Rns', *packages).returncode == 0:
         print(f"\n{GREEN}  ✓ Melted clean.{RESET}")
     else:
-        print(f"\n{RED}   Melt incomplete.{RESET}"); sys.exit(1)
+        print(f"\n{RED}   Melt incomplete.{RESET}");
+        sys.exit(1)
+
 
 def cmd_dive():
     require_root()
@@ -217,7 +246,9 @@ def cmd_dive():
     if pacman('-Syu').returncode == 0:
         print(f"\n{GREEN}  ✓ Surfaced with everything up to date.{RESET}")
     else:
-        print(f"\n{RED}  ✗ Something went wrong mid-dive.{RESET}"); sys.exit(1)
+        print(f"\n{RED}  ✗ Something went wrong mid-dive.{RESET}");
+        sys.exit(1)
+
 
 def cmd_surface(packages):
     if not packages: print(f"{RED}  ✗ Usage: surface <query>{RESET}"); sys.exit(1)
@@ -228,9 +259,10 @@ def cmd_surface(packages):
             if line.strip() and '/' in line.split()[0]:
                 parts = line.split()
                 repo, _, name = parts[0].partition('/')
-                print(f"  {CYAN}{repo}/{RESET}{BOLD}{name}{RESET} {DIM}{parts[1] if len(parts)>1 else ''}{RESET}")
+                print(f"  {CYAN}{repo}/{RESET}{BOLD}{name}{RESET} {DIM}{parts[1] if len(parts) > 1 else ''}{RESET}")
     else:
         print(f"  {YELLOW}No packages found.{RESET}")
+
 
 def cmd_depth(package):
     if not package: print(f"{RED}  ✗ Usage: depth <package>{RESET}"); sys.exit(1)
@@ -243,7 +275,9 @@ def cmd_depth(package):
                 key, _, val = line.partition(':')
                 print(f"  {CYAN}{key.strip():<20}{RESET}: {val.strip()}")
     else:
-        print(f"  {RED}Package '{package}' not found.{RESET}"); sys.exit(1)
+        print(f"  {RED}Package '{package}' not found.{RESET}");
+        sys.exit(1)
+
 
 def cmd_iceberg():
     print_section("Your Iceberg — Installed Packages")
@@ -251,40 +285,52 @@ def cmd_iceberg():
     if result.returncode == 0:
         for line in result.stdout.strip().split('\n'):
             parts = line.split()
-            if parts: print(f"  {CYAN}❄{RESET}  {BOLD}{parts[0]:<30}{RESET} {DIM}{parts[1] if len(parts)>1 else ''}{RESET}")
+            if parts: print(
+                f"  {CYAN}❄{RESET}  {BOLD}{parts[0]:<30}{RESET} {DIM}{parts[1] if len(parts) > 1 else ''}{RESET}")
     else:
-        print(f"  {RED}Could not list packages.{RESET}"); sys.exit(1)
+        print(f"  {RED}Could not list packages.{RESET}");
+        sys.exit(1)
+
 
 def cmd_freeze(packages):
     if not packages: print(f"{RED}  ✗ Usage: freeze <package> [package...]{RESET}"); sys.exit(1)
     require_root()
     try:
-        with open('/etc/pacman.conf', 'r') as f: lines = f.readlines()
+        with open('/etc/pacman.conf', 'r') as f:
+            lines = f.readlines()
         found = False
         for i, line in enumerate(lines):
             if re.match(r'^\s*IgnorePkg\s*=', line):
                 lines[i] = f'IgnorePkg = {" ".join(list(set(line.split("=", 1)[1].strip().split() + packages)))}\n'
-                found = True; break
+                found = True;
+                break
         if not found: lines.append(f'\nIgnorePkg = {" ".join(packages)}\n')
-        with open('/etc/pacman.conf', 'w') as f: f.writelines(lines)
+        with open('/etc/pacman.conf', 'w') as f:
+            f.writelines(lines)
         print(f"  {GREEN}✓ Frozen: {', '.join(packages)}{RESET}")
     except Exception as e:
-        print(f"  {RED} Could not update pacman.conf: {e}{RESET}"); sys.exit(1)
+        print(f"  {RED} Could not update pacman.conf: {e}{RESET}");
+        sys.exit(1)
+
 
 def cmd_thaw(packages):
     if not packages: print(f"{RED}  ✗ Usage: thaw <package> [package...]{RESET}"); sys.exit(1)
     require_root()
     try:
-        with open('/etc/pacman.conf', 'r') as f: lines = f.readlines()
+        with open('/etc/pacman.conf', 'r') as f:
+            lines = f.readlines()
         for i, line in enumerate(lines):
             if re.match(r'^\s*IgnorePkg\s*=', line):
                 updated = set(line.split('=', 1)[1].strip().split()) - set(packages)
                 lines[i] = f'IgnorePkg = {" ".join(sorted(updated))}\n' if updated else '#IgnorePkg =\n'
                 break
-        with open('/etc/pacman.conf', 'w') as f: f.writelines(lines)
+        with open('/etc/pacman.conf', 'w') as f:
+            f.writelines(lines)
         print(f"  {GREEN}✓ Thawed: {', '.join(packages)}{RESET}")
     except Exception as e:
-        print(f"  {RED} Could not update pacman.conf: {e}{RESET}"); sys.exit(1)
+        print(f"  {RED} Could not update pacman.conf: {e}{RESET}");
+        sys.exit(1)
+
 
 def cmd_link():
     require_root()
@@ -295,11 +341,12 @@ def cmd_link():
     except subprocess.CalledProcessError:
         print(f"  {RED} Failed to create symlink.{RESET}")
 
+
 def cmd_update():
     print(f"{DIM}  Checking for ipm updates from the IUR...{RESET}")
     url = "https://raw.githubusercontent.com/iceberg-linux-dev/IUR/main/ipm"
     result = subprocess.run(['curl', '-s', url], capture_output=True, text=True)
-    
+
     if result.returncode == 0 and '#!/usr/bin/env python3' in result.stdout:
         with open('/usr/local/bin/ipm', 'w') as f:
             f.write(result.stdout)
@@ -308,15 +355,18 @@ def cmd_update():
     else:
         print(f"{RED}  ✗ Failed to fetch update. Check URL or internet.{RESET}")
 
+
 def cmd_help():
     print_banner()
     cmds = [("submerge <pkg...>", "Install package(s)"), ("melt <pkg...>", "Uninstall package(s)"),
             ("dive", "Update the entire system"), ("surface <query>", "Search available packages"),
             ("depth <pkg>", "Show detailed package info"), ("iceberg", "List all installed packages"),
             ("freeze <pkg...>", "Lock package(s)"), ("thaw <pkg...>", "Unlock package(s)"),
-            ("update", "Update ipm from the IUR"), ("installer", "Launch the Iceberg Linux installer"), ("link", "Create 'installer' shortcut")]
+            ("update", "Update ipm from the IUR"), ("installer", "Launch the Iceberg Linux installer"),
+            ("link", "Create 'installer' shortcut")]
     print(f"  {BOLD}Usage:{RESET}  <command> [args]  (No need to type 'ipm'!)\n")
     for cmd, desc in cmds: print(f"  {WHITE}{cmd:<26}{RESET}{DIM}{desc}{RESET}")
+
 
 # ======================================================================
 #  ICEBERG LINUX INSTALLER
@@ -329,13 +379,14 @@ def select_de():
     for i, de in enumerate(["1. KDE Plasma", "2. GNOME", "3. XFCE4", "4. Manual (TTY)", "5. Quit"], 1):
         print(CYAN + "║" + RESET + f" {de}".ljust(46) + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
-    
+
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '5': print("\nExiting installer. Goodbye!"); sys.exit(0)
         if choice in ['1', '2', '3', '4']:
-            return {'1':'kde', '2':'gnome', '3':'xfce', '4':'manual'}[choice]
+            return {'1': 'kde', '2': 'gnome', '3': 'xfce', '4': 'manual'}[choice]
         print(f"{RED}  Invalid choice. Please enter 1, 2, 3, 4, or 5.{RESET}")
+
 
 def select_install_size():
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
@@ -344,31 +395,36 @@ def select_install_size():
     print(CYAN + "║" + RESET + " 1. Full  (all packages)                  " + CYAN + "║" + RESET)
     print(CYAN + "║" + RESET + " 2. Minimal (firefox alacritty vim nano)  " + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
-    
+
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '1': return 'full'
         if choice == '2': return 'minimal'
         print(f"{RED}  Invalid choice. Please enter 1 or 2.{RESET}")
 
+
 def auto_partition(drive):
     subprocess.run(['umount', '-R', '/mnt'], capture_output=True)
     subprocess.run(['swapoff', '-a'], capture_output=True)
-    for name in subprocess.run(['lsblk', '-rno', 'NAME', drive], capture_output=True, text=True).stdout.strip().split('\n'):
+    for name in subprocess.run(['lsblk', '-rno', 'NAME', drive], capture_output=True, text=True).stdout.strip().split(
+            '\n'):
         if name: subprocess.run(['umount', '-f', f'/dev/{name}'], capture_output=True)
-    
-    # Wipe existing signatures to prevent parted errors
+
     subprocess.run(['wipefs', '-a', drive], capture_output=True)
-    
+
     p1, p2, p3 = get_partition_names(drive)
     print("\nCreating & formatting partitions...")
-    # FIXED: Changed 'EFI', 'swap', 'root' to 'primary' to satisfy parted's strict GPT enum requirements
-    subprocess.run(['parted', '-s', drive, 'mklabel', 'gpt', 'mkpart', 'primary', 'fat32', '1MiB', '1025MiB', 'set', '1', 'esp', 'on', 'mkpart', 'primary', 'linux-swap', '1025MiB', '5121MiB', 'mkpart', 'primary', 'ext4', '5121MiB', '100%'], check=True)
+    # FIXED: 'primary' satisfies parted's strict GPT enum requirements
+    subprocess.run(
+        ['parted', '-s', drive, 'mklabel', 'gpt', 'mkpart', 'primary', 'fat32', '1MiB', '1025MiB', 'set', '1', 'esp',
+         'on', 'mkpart', 'primary', 'linux-swap', '1025MiB', '5121MiB', 'mkpart', 'primary', 'ext4', '5121MiB', '100%'],
+        check=True)
     subprocess.run(['partprobe', drive], check=True)
     time.sleep(2)
     subprocess.run(['mkfs.fat', '-F32', p1], check=True)
     subprocess.run(['mkswap', p2], check=True)
     subprocess.run(['mkfs.ext4', p3], check=True)
+
 
 def manual_partition(drive):
     input("\nPress Enter to open cfdisk...")
@@ -384,15 +440,17 @@ def manual_partition(drive):
     subprocess.run(['mount', p1, '/mnt/boot/efi'], check=True)
     subprocess.run(['swapon', p2], check=True)
 
+
 def partition_menu(drive):
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
-    print(CYAN + "║" + (RED + "  ⚠  Existing OS Detected! Wipe recommended. " if detect_os(drive) else WHITE + "    Partition Your Drive:                 ") + CYAN + "║" + RESET)
+    print(CYAN + "║" + (RED + "  ⚠  Existing OS Detected! Wipe recommended. " if detect_os(
+        drive) else WHITE + "    Partition Your Drive:                 ") + CYAN + "║" + RESET)
     print(CYAN + "╠══════════════════════════════════════════════╣" + RESET)
     print(CYAN + "║" + RESET + " 1. Auto (1GB EFI, 4GB swap, rest root)  " + CYAN + "║" + RESET)
     print(CYAN + "║" + RESET + " 2. Manual (cfdisk)                       " + CYAN + "║" + RESET)
     print(CYAN + "║" + RESET + " 3. Quit                                  " + CYAN + "║" + RESET)
     print(CYAN + "══════════════════════════════════════════════╝" + RESET)
-    
+
     while True:
         choice = input("\nSelect an option: ").strip()
         if choice == '3': sys.exit(0)
@@ -400,22 +458,30 @@ def partition_menu(drive):
         if choice == '2': manual_partition(drive); return False
         print(f"{RED}  Invalid choice. Please enter 1, 2, or 3.{RESET}")
 
+
 def install_base(de, size):
-    base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo', 'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget', 'curl', 'iwd', 'reflector', 'fastfetch', 'ufw', 'lightdm', 'lightdm-gtk-greeter']
+    base_packages = ['base', 'linux', 'linux-firmware', 'base-devel', 'networkmanager', 'grub', 'efibootmgr', 'sudo',
+                     'pipewire', 'pipewire-pulse', 'wireplumber', 'noto-fonts', 'nano', 'vim', 'python', 'git', 'wget',
+                     'curl', 'iwd', 'reflector', 'fastfetch', 'ufw', 'lightdm', 'lightdm-gtk-greeter']
     ucode = get_ucode()
     if ucode: base_packages.append(ucode)
-    
+
     vendor, _ = detect_wifi_chip()
-    fw_map = {'marvell': ['linux-firmware-marvell'], 'realtek': ['linux-firmware-realtek'], 'broadcom': ['linux-firmware-broadcom'], 'mediatek': ['linux-firmware-mediatek'], 'qualcomm': ['linux-firmware-qcom']}
+    fw_map = {'marvell': ['linux-firmware-marvell'], 'realtek': ['linux-firmware-realtek'],
+              'broadcom': ['linux-firmware-broadcom'], 'mediatek': ['linux-firmware-mediatek'],
+              'qualcomm': ['linux-firmware-qcom']}
     for pkg in fw_map.get(vendor, ['linux-firmware']):
         if pkg not in base_packages: base_packages.append(pkg)
-    
-    de_pkgs = {'kde': ['plasma', 'kde-applications', 'xorg-server'], 'gnome': ['gnome', 'gnome-extra', 'xorg-server'], 'xfce': ['xfce4', 'xfce4-goodies', 'xorg-server'], 'manual': []}
-    min_pkgs = {'kde': ['plasma', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'gnome': ['gnome-shell', 'gnome-terminal', 'nautilus', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'xfce': ['xfce4', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'manual': ['htop']}
+
+    de_pkgs = {'kde': ['plasma', 'kde-applications', 'xorg-server'], 'gnome': ['gnome', 'gnome-extra', 'xorg-server'],
+               'xfce': ['xfce4', 'xfce4-goodies', 'xorg-server'], 'manual': []}
+    min_pkgs = {'kde': ['plasma', 'xorg-server', 'firefox', 'alacritty', 'htop'],
+                'gnome': ['gnome-shell', 'gnome-terminal', 'nautilus', 'xorg-server', 'firefox', 'alacritty', 'htop'],
+                'xfce': ['xfce4', 'xorg-server', 'firefox', 'alacritty', 'htop'], 'manual': ['htop']}
     packages = base_packages + (de_pkgs if size == 'full' else min_pkgs).get(de, [])
-    
+
     print(f"\nInstalling {size.upper()} {de.upper()} system...")
-    
+
     print(f"{DIM}  Forcing reliable DNS servers and locking them...{RESET}")
     try:
         subprocess.run(['rm', '-f', '/etc/resolv.conf'], capture_output=True)
@@ -426,26 +492,33 @@ def install_base(de, size):
         print(f"{YELLOW}  ⚠ DNS override warning: {e} (Proceeding anyway){RESET}")
 
     print(f"{DIM}  Refreshing package mirrors...{RESET}")
-    if subprocess.run(['reflector', '--country', 'US', '--latest', '5', '--sort', 'rate', '--save', '/etc/pacman.d/mirrorlist'], capture_output=True).returncode != 0:
-        res = subprocess.run(['curl', '-s', 'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on'], capture_output=True, text=True)
+    if subprocess.run(
+            ['reflector', '--country', 'US', '--latest', '5', '--sort', 'rate', '--save', '/etc/pacman.d/mirrorlist'],
+            capture_output=True).returncode != 0:
+        res = subprocess.run(
+            ['curl', '-s', 'https://archlinux.org/mirrorlist/?country=US&protocol=https&use_mirror_status=on'],
+            capture_output=True, text=True)
         if res.returncode == 0:
             with open('/etc/pacman.d/mirrorlist', 'w') as f:
-                f.write('\n'.join([l for l in res.stdout.replace('#Server', 'Server').split('\n') if l.startswith('Server')][:5]))
-    
-    # PRE-FLIGHT CHECK: Guarantee DNS works right before pacstrap
+                f.write('\n'.join(
+                    [l for l in res.stdout.replace('#Server', 'Server').split('\n') if l.startswith('Server')][:5]))
+
     print(f"{DIM}  Verifying DNS resolution before pacstrap...{RESET}")
     if subprocess.run(['ping', '-c', '1', '-W', '2', 'archlinux.org'], capture_output=True).returncode != 0:
         print(f"{RED}  ✗ CRITICAL: Cannot resolve archlinux.org. Check internet connection.{RESET}")
         sys.exit(1)
-    
+
     try:
         subprocess.run(['pacstrap', '-K', '/mnt'] + packages, check=True)
     except subprocess.CalledProcessError:
-        print(RED + "\nERROR: pacstrap failed! Check internet and try again." + RESET); sys.exit(1)
-    
+        print(RED + "\nERROR: pacstrap failed! Check internet and try again." + RESET);
+        sys.exit(1)
+
     result = subprocess.run(['genfstab', '-U', '/mnt'], capture_output=True, text=True)
-    with open('/mnt/etc/fstab', 'w') as f: f.write(result.stdout)
+    with open('/mnt/etc/fstab', 'w') as f:
+        f.write(result.stdout)
     print("Base system installed!")
+
 
 def install_ipm():
     print(f"{DIM}  Installing ipm and baking native commands into the system...{RESET}")
@@ -453,11 +526,12 @@ def install_ipm():
         subprocess.run(['mkdir', '-p', '/mnt/usr/local/bin'], check=True)
         subprocess.run(['cp', '/usr/local/bin/ipm', '/mnt/usr/local/bin/ipm'], check=True)
         subprocess.run(['chmod', '+x', '/mnt/usr/local/bin/ipm'], check=True)
-        
-        commands = ['submerge', 'melt', 'dive', 'surface', 'depth', 'iceberg', 'freeze', 'thaw', 'update', 'installer', 'link', 'help']
+
+        commands = ['submerge', 'melt', 'dive', 'surface', 'depth', 'iceberg', 'freeze', 'thaw', 'update', 'installer',
+                    'link', 'help']
         for cmd in commands:
             subprocess.run(['ln', '-sf', '/usr/local/bin/ipm', f'/mnt/usr/bin/{cmd}'], check=True)
-        
+
         subprocess.run(['mv', '/mnt/usr/bin/pacman', '/mnt/usr/bin/pacman.bin'], check=True)
         pacman_redirect = '''#!/bin/bash
 echo -e "\\n🧊 Iceberg Linux uses IPM, not pacman!\\n"
@@ -472,38 +546,44 @@ exit 1
         with open('/mnt/usr/bin/pacman', 'w') as f:
             f.write(pacman_redirect)
         subprocess.run(['chmod', '+x', '/mnt/usr/bin/pacman'], check=True)
-        
+
         print(f"{GREEN}  ✓ ipm, native shortcuts, and pacman kill-switch installed successfully!{RESET}")
     except subprocess.CalledProcessError as e:
         print(f"{RED}  ✗ CRITICAL: Failed to install ipm: {e}{RESET}")
         sys.exit(1)
 
+
 def install_grub(selected):
     print("Installing GRUB...")
     try:
         if is_efi():
-            subprocess.run(['grub-install', '--target=x86_64-efi', '--efi-directory=/mnt/boot/efi', '--boot-directory=/mnt/boot', '--bootloader-id=Iceberg', '--removable'], check=True)
+            subprocess.run(
+                ['grub-install', '--target=x86_64-efi', '--efi-directory=/mnt/boot/efi', '--boot-directory=/mnt/boot',
+                 '--bootloader-id=Iceberg', '--removable'], check=True)
         else:
             subprocess.run(['grub-install', '--target=i386-pc', '--boot-directory=/mnt/boot', selected], check=True)
         subprocess.run(['arch-chroot', '/mnt', 'grub-mkconfig', '-o', '/boot/grub/grub.cfg'], check=True)
         print("GRUB installed successfully!")
     except subprocess.CalledProcessError:
-        print(RED + "\nERROR: GRUB install failed!" + RESET); sys.exit(1)
+        print(RED + "\nERROR: GRUB install failed!" + RESET);
+        sys.exit(1)
+
 
 def configure_system(de, selected):
     hostname = input("\nEnter hostname: ").strip()
-    
+
     with open('/mnt/etc/hostname', 'w') as f:
         f.write(hostname + '\n')
-    
-    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen'], check=True)
+
+    subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen'],
+                   check=True)
     with open('/mnt/etc/locale.conf', 'w') as f:
         f.write('LANG=en_US.UTF-8\n')
-        
+
     tz = input('Enter timezone (e.g. America/New_York): ').strip()
     subprocess.run(['arch-chroot', '/mnt', 'ln', '-sf', f"/usr/share/zoneinfo/{tz}", '/etc/localtime'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'hwclock', '--systohc'], check=True)
-    
+
     os_release_content = 'NAME="Iceberg Linux"\nID=iceberg\nPRETTY_NAME="Iceberg Linux"\nLOGO=iceberg\n'
     with open('/mnt/etc/os-release', 'w') as f:
         f.write(os_release_content)
@@ -516,89 +596,86 @@ def configure_system(de, selected):
 
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'NetworkManager'], check=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'iwd'], check=True)
-    
+
     nm_conf = "/mnt/etc/NetworkManager/NetworkManager.conf"
     os.makedirs(os.path.dirname(nm_conf), exist_ok=True)
     with open(nm_conf, 'a') as f:
         f.write("\n[device]\nwifi.backend=iwd\n")
-    
+
     print(f"{DIM}  Configuring UFW Firewall (Deny incoming, Allow outgoing)...{RESET}")
     subprocess.run(['arch-chroot', '/mnt', 'ufw', '--force', 'reset'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'deny', 'incoming'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'ufw', 'default', 'allow', 'outgoing'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', '--now', 'ufw'], check=True)
-    
+
     print(f"{DIM}  Setting LightDM as standard display manager...{RESET}")
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'disable', 'sddm', 'gdm'], capture_output=True)
     subprocess.run(['arch-chroot', '/mnt', 'systemctl', 'enable', 'lightdm'], check=True)
-    
+
     subprocess.run(['arch-chroot', '/mnt', 'mkinitcpio', '-P'], check=True)
     bind_mounts()
     install_grub(selected)
-    
+
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', 'echo "%wheel ALL=(ALL:ALL) ALL" >> /etc/sudoers'], check=True)
-    
+
     root_pw = input("Set root password: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "root:{root_pw}" | chpasswd'], check=True)
-    
+
     username = input("Enter username: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'useradd', '-m', '-G', 'wheel', '-s', '/bin/bash', username], check=True)
-    
+
     user_pw = input(f"Set password for {username}: ").strip()
     subprocess.run(['arch-chroot', '/mnt', 'bash', '-c', f'echo "{username}:{user_pw}" | chpasswd'], check=True)
-    
-    # BULLETPROOF FASTFETCH CONFIG: Use Python's json library to guarantee 100% valid JSON, no escape errors
+
+    # BULLETPROOF FASTFETCH CONFIG: json.dump guarantees 100% valid JSON
     ff_dir = f'/mnt/home/{username}/.config/fastfetch'
     os.makedirs(ff_dir, exist_ok=True)
     ff_config_path = os.path.join(ff_dir, 'config.jsonc')
-    
-    ff_config = {
-        "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
-        "logo": {
-            "type": "custom",
-            "source": [
-                "              *",
-                "             /|\\",
-                "            / | \\",
-                "           /  |  \\",
-                "          / , ' , \\",
-                "         /  ' | '  \\",
-                "        / ,'  |  ', \\",
-                "       /,'    |    ',\\",
-                "      /'   .--+--.   '\\",
-                "     /   ,'   |   ',   \\",
-                "    /  ,'     |     ',  \\",
-                "   /,-'        |       '-,\\"
-            ]
-        },
-        "modules": [
-            "title", "separator", "os", "host", "kernel", "uptime", "packages",
-            "shell", "display", "de", "wm", "theme", "icons", "font", "cursor",
-            "terminal", "terminalfont", "cpu", "gpu", "memory", "swap", "disk",
-            "battery", "locale", "break"
-        ],
-        "display": {
-            "separator": "  ->  "
-        }
-    }
-    
+
+
     with open(ff_config_path, 'w') as f:
         json.dump(ff_config, f, indent=2)
-        
-    subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'], check=True)
-    
+
+    subprocess.run(['arch-chroot', '/mnt', 'chown', '-R', f'{username}:{username}', f'/home/{username}/.config'],
+                   check=True)
+
     print("\nSystem configured!")
 
+ff_config = {
+    "logo": {
+        "source": [
+            "              *",
+            "             /|\\",
+            "            / | \\",
+            "           /  |  \\",
+            "          / , ' , \\",
+            "         /  ' | '  \\",
+            "        / ,'  |  ', \\",
+            "       /,'    |    ',\\",
+            "      /'   .--+--.   '\\",
+            "     /   ,'   |   ',   \\",
+            "    /  ,'     |     ',  \\",
+            "   /,-'        |       '-,\\"
+        ]
+    },
+    "modules": [
+        "os", "host", "kernel", "uptime", "packages",
+        "shell", "de", "wm", "terminal", "cpu", "gpu", "memory", "disk"
+    ]
+}
 def run_installer():
     print_banner()
     de_choice = select_de()
     size_choice = 'minimal' if de_choice == 'manual' else select_install_size()
-    
-    disks = [d for d in json.loads(subprocess.run(['lsblk', '-J', '-o', 'NAME,TYPE,SIZE'], capture_output=True, text=True).stdout)['blockdevices'] if d['type'] == 'disk' and 'boot' not in d['name']]
+
+    disks = [d for d in
+             json.loads(subprocess.run(['lsblk', '-J', '-o', 'NAME,TYPE,SIZE'], capture_output=True, text=True).stdout)[
+                 'blockdevices'] if d['type'] == 'disk' and 'boot' not in d['name']]
     print(CYAN + "\n╔══════════════════════════════════════════════╗" + RESET)
-    for i, disk in enumerate(disks): print(CYAN + "║" + RESET + f" {i+1}. /dev/{disk['name']} - {disk['size']}".ljust(46) + CYAN + "║" + RESET)
+    for i, disk in enumerate(disks): print(
+        CYAN + "║" + RESET + f" {i + 1}. /dev/{disk['name']} - {disk['size']}".ljust(46) + CYAN + "║" + RESET)
     print(CYAN + "╚══════════════════════════════════════════════╝" + RESET)
-    
+
     selected = f"/dev/{disks[int(input('\nSelect a drive: ')) - 1]['name']}"
     if partition_menu(selected):
         p1, p2, p3 = get_partition_names(selected)
@@ -606,15 +683,17 @@ def run_installer():
         subprocess.run(['mkdir', '-p', '/mnt/boot/efi'], check=True)
         subprocess.run(['mount', p1, '/mnt/boot/efi'], check=True)
         subprocess.run(['swapon', p2], check=True)
-    
+
     install_base(de_choice, size_choice)
     install_ipm()
     configure_system(de_choice, selected)
-    
-    print(CYAN + "\n╔══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n╚══════════════════════════════════════════════╝" + RESET)
+
+    print(
+        CYAN + "\n╔══════════════════════════════════════════════╗\n║         Installation complete!               ║\n║      Would you like to reboot now?           ║\n╚══════════════════════════════════════════════╝" + RESET)
     if input("Reboot now? (yes/no): ").strip().lower() == 'yes':
         subprocess.run(['umount', '-R', '/mnt'])
         subprocess.run(['reboot'])
+
 
 def interactive_shell():
     print_banner()
@@ -626,10 +705,15 @@ def interactive_shell():
             parts = input(f"{CYAN}ipm>{RESET} ").strip().split()
             if not parts: continue
             if parts[0].lower() in ('exit', 'quit'): print(f"{DIM}  The ice holds. Goodbye!{RESET}"); sys.exit(0)
-            if parts[0].lower() in COMMANDS: COMMANDS[parts[0].lower()](parts[1:]); print()
-            else: print(f"  {RED} Unknown command: '{parts[0]}'. Type 'help'.{RESET}\n")
-        except KeyboardInterrupt: print(f"\n  {DIM}The ice holds. Goodbye!{RESET}"); sys.exit(0)
-        except Exception as e: print(f"  {RED}✗ An error occurred: {e}{RESET}\n")
+            if parts[0].lower() in COMMANDS:
+                COMMANDS[parts[0].lower()](parts[1:]); print()
+            else:
+                print(f"  {RED} Unknown command: '{parts[0]}'. Type 'help'.{RESET}\n")
+        except KeyboardInterrupt:
+            print(f"\n  {DIM}The ice holds. Goodbye!{RESET}"); sys.exit(0)
+        except Exception as e:
+            print(f"  {RED}✗ An error occurred: {e}{RESET}\n")
+
 
 # ======================================================================
 #  DISPATCH
@@ -645,11 +729,12 @@ COMMANDS = {
     'help': lambda args: cmd_help(), '--help': lambda args: cmd_help(), '-h': lambda args: cmd_help(),
 }
 
+
 def main():
     if os.geteuid() != 0:
-        try: 
+        try:
             os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
-        except Exception as e: 
+        except Exception as e:
             print(f"{RED}  ✗ Failed to elevate: {e}{RESET}")
             sys.exit(1)
 
@@ -657,7 +742,7 @@ def main():
     if script_name in COMMANDS and script_name not in ['ipm', 'help', '--help', '-h']:
         COMMANDS[script_name](sys.argv[1:])
         sys.exit(0)
-    
+
     if script_name == 'installer':
         run_installer()
         sys.exit(0)
@@ -673,6 +758,7 @@ def main():
     else:
         print(f"\n  {RED}✗ Unknown command: '{command}'{RESET}\n  Run {CYAN}help{RESET} to see available commands.\n")
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
